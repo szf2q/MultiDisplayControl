@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="14px" height="14px" viewBox="0 0 14 14" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>确定</title>
+    <g id="第二批" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="1机队状态" transform="translate(-301.000000, -1011.000000)" fill="#FFFFFF" fill-rule="nonzero">
+            <g id="形状结合" transform="translate(301.000000, 1011.000000)">
+                <path d="M7,0 L7,1 L1,1 L1,13 L13,13 L13,7 L14,7 L14,13 C14,13.5522847 13.5522847,14 13,14 L1,14 C0.44771525,14 0,13.5522847 0,13 L0,1 C0,0.44771525 0.44771525,0 1,0 L7,0 Z M13.1748921,1.66375675 L13.9150015,2.33624325 L7.20845083,9.71718119 L3.1981215,5.85528644 L3.89177215,5.13497485 L7.16,8.282 L13.1748921,1.66375675 Z"></path>
+            </g>
+        </g>
+    </g>
+</svg>

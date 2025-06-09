@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="14px" height="14px" viewBox="0 0 14 14" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>多选3</title>
+    <g id="浅色" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="icon切图" transform="translate(-349.000000, -1357.000000)" fill="#1C60FE">
+            <g id="形状结合" transform="translate(349.000000, 1357.000000)">
+                <path d="M12,0 C13.1045695,5.56104062e-16 14,0.8954305 14,2 L14,12 C14,13.1045695 13.1045695,14 12,14 L2,14 C0.8954305,14 8.94280938e-16,13.1045695 0,12 L0,2 C-3.57315355e-16,0.8954305 0.8954305,-1.91384796e-17 2,0 L12,0 Z M11,6.5 L3,6.5 L3,7.5 L11,7.5 L11,6.5 Z"></path>
+            </g>
+        </g>
+    </g>
+</svg>

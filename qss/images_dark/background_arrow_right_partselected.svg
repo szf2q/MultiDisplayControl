@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="244px" height="44px" viewBox="0 0 244 44" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>部分选中箭头</title>
+    <defs>
+        <linearGradient x1="50%" y1="5.1074%" x2="50%" y2="97.7148%" id="linearGradient-1">
+            <stop stop-color="#1C7AFE" stop-opacity="0" offset="0.381064248%"></stop>
+            <stop stop-color="#1C7AFE" offset="55.498542%"></stop>
+            <stop stop-color="#1C7AFE" stop-opacity="0" offset="100%"></stop>
+        </linearGradient>
+    </defs>
+    <g id="第二批" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="3机队状态单选" transform="translate(-1062.000000, -323.000000)">
+            <g id="未选中箭头" transform="translate(1062.000000, 323.000000)">
+                <path d="M228.735749,0.5 L243.39484,22 L228.735749,43.5 L1.94606941,43.5 L16.6051603,22 L1.94606941,0.5 L228.735749,0.5 Z" id="矩形" stroke-opacity="0.595218258" stroke="#3063CA" fill-opacity="0.9" fill="#3063CA"></path>
+                <polygon id="矩形" fill="url(#linearGradient-1)" points="0 0 3 0 18 22 3 44 0 44 15 22"></polygon>
+                <polygon id="矩形" fill="url(#linearGradient-1)" points="226 0 229 0 244 22 229 44 226 44 241 22"></polygon>               
+            </g>
+        </g>
+    </g>
+</svg>

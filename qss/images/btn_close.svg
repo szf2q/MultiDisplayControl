@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="12px" height="12px" viewBox="0 0 12 12" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>标签关闭</title>
+    <g id="第二批" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="icon切图" transform="translate(-454.000000, -73.000000)" fill="#8AAAEA" fill-rule="nonzero">
+            <g id="形状结合" transform="translate(454.646447, 73.646447)">
+                <path d="M9.89949494,0 L10.6066017,0.707106781 L6.01,5.303 L10.6066017,9.89949494 L9.89949494,10.6066017 L5.303,6.01 L0.707106781,10.6066017 L0,9.89949494 L4.596,5.303 L0,0.707106781 L0.707106781,0 L5.303,4.596 L9.89949494,0 Z"></path>
+            </g>
+        </g>
+    </g>
+</svg>

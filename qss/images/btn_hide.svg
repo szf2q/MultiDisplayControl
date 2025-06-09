@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="18px" height="18px" viewBox="0 0 18 18" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>最小</title>
+    <g id="第二批" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="icon切图" transform="translate(-378.000000, -29.000000)" fill="#8AAAEA" fill-rule="nonzero">
+            <g id="最小" transform="translate(378.000000, 29.000000)">
+                <g transform="translate(2.000000, 8.500000)" id="路径">
+                    <polygon transform="translate(7.000000, 0.500000) rotate(-360.000000) translate(-7.000000, -0.500000) " points="14 0 14 1 0 1 0 0"></polygon>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

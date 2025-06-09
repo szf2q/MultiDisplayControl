@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1000px" height="41px" viewBox="0 0 1000 41" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title></title>
+    <defs>
+        <linearGradient x1="1.52954955%" y1="50%" x2="100%" y2="50%" id="linearGradient-1">
+            <stop stop-color="#FFA200" offset="0%"></stop>
+            <stop stop-color="#FFA200" stop-opacity="0" offset="100%"></stop>
+        </linearGradient>
+        <linearGradient x1="4.2737%" y1="37.9843%" x2="94.8081%" y2="37.9843%" id="linearGradient-2">
+            <stop stop-color="#FFA200" offset="0%"></stop>
+            <stop stop-color="#C4C4C4" stop-opacity="0" offset="100%"></stop>
+        </linearGradient>
+        <linearGradient x1="4.2737%" y1="37.9843%" x2="94.808%" y2="37.9843%" id="linearGradient-3">
+            <stop stop-color="#FFA200" offset="0%"></stop>
+            <stop stop-color="#C4C4C4" stop-opacity="0" offset="100%"></stop>
+        </linearGradient>
+        <linearGradient x1="4.2738%" y1="37.9843%" x2="94.8081%" y2="37.9843%" id="linearGradient-4">
+            <stop stop-color="#FFA200" offset="0%"></stop>
+            <stop stop-color="#C4C4C4" stop-opacity="0" offset="100%"></stop>
+        </linearGradient>
+    </defs>
+    <g id="" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="" transform="translate(-1250.000000, -165.000000)">
+            <g id="" transform="translate(1250.000000, 165.000000)">
+                <path d="M8,0 L629.348315,0 C633.766593,-8.11624501e-16 637.348315,3.581722 1000.348315,8 L1000.348315,40 L637.348315,40 L0,40 L0,8 C-5.41083001e-16,3.581722 3.581722,8.11624501e-16 8,0 Z" id="矩形" fill="url(#linearGradient-1)" opacity="0.149999991"></path>
+                <line x1="0.651685393" y1="40.4689941" x2="1000" y2="40.4689941" id="" stroke="#FFA200" opacity="0.200000003"></line>
+                <g id="" transform="translate(0.187988, 0.468994)">
+                    <path d="M26.5444972,0 L10.421582,40 L0,40 L16.1235258,0 L26.5444972,0 Z M45.8058517,0 L29.6829365,40 L19.2613545,40 L35.3848803,0 L45.8058517,0 Z" id="差集" fill="url(#linearGradient-2)" opacity="0.200000003"></path>
+                    <path d="M66.3587889,0 L50.2335646,40 L39.8119761,40 L55.9355014,0 L66.3587889,0 Z M85.6213547,0 L69.4931597,40 L59.0733662,40 L75.1968888,0 L85.6213547,0 Z" id="差集" fill="url(#linearGradient-3)" opacity="0.200000003"></path>
+                    <path d="M107.358789,0 L91.2306395,40 L80.8120117,40 L96.9343208,0 L107.358789,0 Z M126.620143,0 L110.491994,40 L100.073366,40 L116.195675,0 L126.620143,0 Z" id="差集" fill="url(#linearGradient-4)" opacity="0.200000003"></path>
+                    <path d="M147.358789,0 L131.23064,40 L120.812012,40 L136.934321,0 L147.358789,0 Z M166.620143,0 L150.491994,40 L140.073366,40 L156.195675,0 L166.620143,0 Z" id="差集" fill="url(#linearGradient-4)" opacity="0.200000003"></path>
+                    <path d="M187.356509,0 L171.233594,40 L160.812012,40 L176.935537,0 L187.356509,0 Z M206.617863,0 L190.494948,40 L180.073366,40 L196.196892,0 L206.617863,0 Z" id="差集" fill="url(#linearGradient-2)" opacity="0.200000003"></path>
+                    <path d="M227.358789,0 L211.233565,40 L200.811976,40 L216.935501,0 L227.358789,0 Z M246.621355,0 L230.49316,40 L220.073366,40 L236.196889,0 L246.621355,0 Z" id="差集" fill="url(#linearGradient-3)" opacity="0.149999991"></path>
+                    <path d="M268.358789,0 L252.23064,40 L241.812012,40 L257.934321,0 L268.358789,0 Z M287.620143,0 L271.491994,40 L261.073366,40 L277.195675,0 L287.620143,0 Z" id="差集" fill="url(#linearGradient-4)" opacity="0.149999991"></path>
+                    <path d="M308.358789,0 L292.23064,40 L281.812012,40 L297.934321,0 L308.358789,0 Z M327.620143,0 L311.491994,40 L301.073366,40 L317.195675,0 L327.620143,0 Z" id="差集" fill="url(#linearGradient-4)" opacity="0.100000001"></path>
+                    <path d="M348.356509,0 L332.233594,40 L321.812012,40 L337.935537,0 L348.356509,0 Z M367.617863,0 L351.494948,40 L341.073366,40 L357.196892,0 L367.617863,0 Z" id="差集" fill="url(#linearGradient-2)" opacity="0.100000001"></path>
+                    <path d="M388.358789,0 L372.233565,40 L361.811976,40 L377.935501,0 L227.358789,0 Z M407.621355,0 L391.49316,40 L381.073366,40 L397.196889,0 L407.621355,0 Z" id="差集" fill="url(#linearGradient-3)" opacity="0.149999991"></path>
+                    <path d="M428.358789,0 L412.23064,40 L401.812012,40 L417.934321,0 L268.358789,0 Z M447.620143,0 L431.491994,40 L421.073366,40 L437.195675,0 L447.620143,0 Z" id="差集" fill="url(#linearGradient-4)" opacity="0.149999991"></path>
+                    <path d="M468.358789,0 L452.23064,40 L441.812012,40 L457.934321,0 L308.358789,0 Z M487.620143,0 L471.491994,40 L461.073366,40 L477.195675,0 L487.620143,0 Z" id="差集" fill="url(#linearGradient-4)" opacity="0.100000001"></path>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

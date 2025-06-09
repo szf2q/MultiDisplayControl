@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="28px" height="28px" viewBox="0 0 28 28" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>操作框</title>
+    <g id="页面-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="1首页" transform="translate(-1719.000000, -12.000000)" stroke="#CAD9F2">
+            <g id="操作框" transform="translate(1719.000000, 12.000000)">
+                <path d="M0.5,0.5 L27.5,0.5 L27.5,27.5 L0.5,27.5 L0.5,0.5 Z" id="矩形_6-8" opacity="0.300000012"></path>
+                <polyline id="路径" points="0.499378861 4.50669257 0.499378861 0.506692565 4.49937886 0.506692565"></polyline>
+                <polyline id="路径" transform="translate(25.499379, 2.506693) scale(-1, 1) translate(-25.499379, -2.506693) " points="23.4993789 4.50669257 23.4993789 0.506692565 27.4993789 0.506692565"></polyline>
+                <polyline id="路径" transform="translate(2.499379, 25.506693) scale(1, -1) translate(-2.499379, -25.506693) " points="0.499378861 27.5066926 0.499378861 23.5066926 4.49937886 23.5066926"></polyline>
+                <polyline id="路径" transform="translate(25.499379, 25.506693) scale(-1, -1) translate(-25.499379, -25.506693) " points="23.4993789 27.5066926 23.4993789 23.5066926 27.4993789 23.5066926"></polyline>
+            </g>
+        </g>
+    </g>
+</svg>

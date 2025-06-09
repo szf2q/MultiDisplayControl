@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="17px" height="16px" viewBox="0 0 17 16" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>标签颜色</title>
+    <g id="浅色" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="49历史数据曲线计算" transform="translate(-1369.000000, -477.000000)">
+            <g id="编组-24" transform="translate(20.000000, 62.000000)">
+                <g id="编组-18" transform="translate(1310.000000, 44.000000)">
+                    <g id="编组-35" transform="translate(-1.000000, 0.000000)">
+                        <g id="标签颜色" transform="translate(40.062745, 371.000000)">
+                            <g transform="translate(1.000000, 1.000000)" id="路径">
+                                <path d="M12.8349043,14 C13.8168634,14 14.6129299,13.2039335 14.6129299,12.2219744 C14.6129299,11.5673054 14.0202695,10.6782926 12.8349043,9.55493607 C11.6495391,10.6782926 11.0568787,11.5673054 11.0568787,12.2219744 C11.0568787,13.2039335 11.8529452,14 12.8349043,14 Z" fill="#1C60FE"></path>
+                                <line x1="5.65768182" y1="0" x2="7.22923417" y2="1.57157013" stroke="#1C60FE" stroke-linecap="round" stroke-linejoin="round"></line>
+                                <polygon stroke="#1C60FE" stroke-linecap="round" stroke-linejoin="round" points="6.91487925 1.25725077 0 8.17216558 5.02901642 13.2011776 11.9438912 6.28625831"></polygon>
+                                <line x1="1.72224447" y1="6.47592919" x2="9.2615174" y2="8.95467464" stroke="#1C60FE" stroke-linecap="round" stroke-linejoin="round"></line>
+                            </g>
+                        </g>
+                    </g>
+                </g>
+            </g>
+        </g>
+    </g>
+</svg>

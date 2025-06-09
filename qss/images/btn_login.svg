@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="328px" height="52px" viewBox="0 0 328 52" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>登录</title>
+    <defs>
+        <path d="M4.259736,52 L323.740264,52 C323.740264,52 328,41.999984 328,26 C328,10.000016 323.740264,0 323.740264,0 C323.740264,0 217.246755,0 4.259736,0 C4.259736,0 0,10.000016 0,26 C0,41.999984 4.259736,52 4.259736,52 C4.259736,52 4.259736,52 4.259736,52 Z" id="path-1"></path>
+        <filter x="-7.6%" y="-38.5%" width="115.2%" height="196.2%" filterUnits="objectBoundingBox" id="filter-2">
+            <feOffset dx="0" dy="5" in="SourceAlpha" result="shadowOffsetOuter1"></feOffset>
+            <feGaussianBlur stdDeviation="7.5" in="shadowOffsetOuter1" result="shadowBlurOuter1"></feGaussianBlur>
+            <feColorMatrix values="0 0 0 0 0.109803922   0 0 0 0 0.478431373   0 0 0 0 0.996078431  0 0 0 0.347383939 0" type="matrix" in="shadowBlurOuter1"></feColorMatrix>
+        </filter>
+    </defs>
+    <g id="页面-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="方案1备份" transform="translate(-1384.000000, -637.000000)">
+            <g id="路径" transform="translate(1384.000000, 637.000000)">
+                <use fill="black" fill-opacity="1" filter="url(#filter-2)" xlink:href="#path-1"></use>
+                <use fill="#1C7AFE" fill-rule="evenodd" xlink:href="#path-1"></use>
+            </g>
+        </g>
+    </g>
+</svg>
