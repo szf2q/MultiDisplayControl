@@ -12,6 +12,9 @@
 *.rej
 *.so
 *.so.*
+*.ppt*
+*.doc*
+*.xls*
 *_pch.h.cpp
 *_resource.rc
 *.qm
