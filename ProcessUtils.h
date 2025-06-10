@@ -18,6 +18,10 @@ class ProcessUtils
         qDebug() << "ProcessUtils destructor";
     };
     /**
+     * @brief runAsAdministrators 以管理员身份运行
+     */
+    virtual int runAsAdministrators() = 0;
+    /**
      * @brief startProcess 启动进程
      * @param processPath 进程路径
      * @return 返回QProcess对象的指针

@@ -11,21 +11,21 @@ GlobalKeyWatcher::~GlobalKeyWatcher()
     //    UnhookWindowsHookEx(GlobalKeyWatcher::keyboardHook);
 }
 
-// LRESULT CALLBACK GlobalKeyWatcher::keyProcessedProc(int nCode, WPARAM wParam, LPARAM lParam)
-//{
-//    if (nCode >= 0)
-//    {
-//        KBDLLHOOKSTRUCT *pKeyInfo = (KBDLLHOOKSTRUCT *)lParam;
-//        if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
-//        {
-//            if (!processKeyPress(pKeyInfo->vkCode))
-//            {
-//                return -1;
-//            }
-//        }
-//    }
-//    return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
-//}
+LRESULT CALLBACK GlobalKeyWatcher::keyProcessedProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode >= 0)
+    {
+        KBDLLHOOKSTRUCT *pKeyInfo = (KBDLLHOOKSTRUCT *)lParam;
+        if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
+        {
+            if (!processKeyPress(pKeyInfo->vkCode))
+            {
+                return -1;
+            }
+        }
+    }
+    return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
+}
 
 bool GlobalKeyWatcher::nativeEventFilter(const QByteArray &eventType, void *message, long *result)
 {

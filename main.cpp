@@ -20,10 +20,12 @@ MultiScreenConfig loadScreenConfig(QString path)
     QVariant showIndex = ini.getValue("screen", "show_index", true);
     QVariant sortScreen = ini.getValue("screen", "sort_screen", true);
     QVariant debugMode = ini.getValue("screen", "debug_mode", false);
+    QVariant runasAdmin = ini.getValue("screen", "runas_administrator", false);
     config.count = screenCount.toInt();
     config.showIndex = showIndex.toBool();
     config.sortScreen = sortScreen.toBool();
     config.debugMode = debugMode.toBool();
+    config.runAsAdministrator = runasAdmin.toBool();
 
     for (int screenIndex = 1; screenIndex <= screenCount.toInt(); screenIndex++)
     {
@@ -239,36 +241,6 @@ void closeAppsWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow
 QMutex globalMutex;
 int main(int argc, char *argv[])
 {
-    BOOL isAdmin = FALSE;
-    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
-    PSID administratorsGroup;
-    if (AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0,
-                                 0, &administratorsGroup))
-    {
-        if (!CheckTokenMembership(NULL, administratorsGroup, &isAdmin))
-        {
-            isAdmin = FALSE;
-        }
-        FreeSid(administratorsGroup);
-    }
-    if (!isAdmin)
-    {
-        wchar_t szPath[MAX_PATH];
-        if (GetModuleFileName(NULL, szPath, ARRAYSIZE(szPath)))
-        {
-            SHELLEXECUTEINFO sei = {sizeof(sei)};
-            sei.lpVerb = L"runas";
-            sei.lpFile = szPath;
-            sei.hwnd = NULL;
-            sei.nShow = SW_NORMAL;
-            if (!ShellExecuteEx(&sei))
-            {
-                QMessageBox::warning(nullptr, "Error", "以管理员身份运行失败！");
-                return 1;
-            }
-            return 0;
-        }
-    }
     try
     {
         QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
@@ -282,6 +254,18 @@ int main(int argc, char *argv[])
         setAppStyle();
 
         MultiScreenConfig config = loadScreenConfig(QApplication::applicationDirPath());
+
+        if (config.runAsAdministrator)
+        {
+            ProcessUtils *processUtils = ProcessFactory::newInstance();
+            int ret = processUtils->runAsAdministrators();
+            delete processUtils;
+            if (ret >= 0)
+            {
+                return ret;
+            }
+        }
+
         qDebug() << "config.count() = " << config.count;
         bool hasPpt = false;
         for (int i = 0; i < qMin(config.count, QGuiApplication::screens().count()); i++)

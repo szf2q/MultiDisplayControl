@@ -1,4 +1,42 @@
 #include "ProcessUtilsWin32Impl.h"
+#include <QMessageBox>
+
+int ProcessUtilsWin32::runAsAdministrators()
+{
+    BOOL isAdmin = FALSE;
+    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+    PSID administratorsGroup;
+    if (AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0,
+                                 0, &administratorsGroup))
+    {
+        if (!CheckTokenMembership(NULL, administratorsGroup, &isAdmin))
+        {
+            isAdmin = FALSE;
+        }
+        FreeSid(administratorsGroup);
+    }
+    if (!isAdmin)
+    {
+        wchar_t szPath[MAX_PATH];
+        if (GetModuleFileName(NULL, szPath, ARRAYSIZE(szPath)))
+        {
+            SHELLEXECUTEINFO sei;
+            sei.cbSize = sizeof(sei);
+            sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+            sei.lpVerb = L"runas";
+            sei.lpFile = szPath;
+            sei.hwnd = NULL;
+            sei.nShow = SW_NORMAL;
+            if (!ShellExecuteEx(&sei))
+            {
+                QMessageBox::warning(nullptr, "Error", "以管理员身份运行失败！");
+                return 1;
+            }
+            return 0;
+        }
+    }
+    return -1;
+}
 
 QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(const QString &processName, const QString &windowTitle)
 {
@@ -13,7 +51,20 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(const QString &processNam
         if (!process.titleName.contains(windowTitle))
         {
             processList.removeAt(i);
+            continue;
         }
+        //        if (processName.contains("chrome.exe"))
+        //        {
+        //            // qDebug() << "pid = " << process.pid << ", hwnd = " << process.hwnd << ", title = " <<
+        //            //            process.titleName << ", class = " << process.className;
+        //            HWND childHwnd = FindWindowExA(process.hwnd, NULL, "Chrome_RenderWidgetHostHWN", NULL);
+        //            if (childHwnd != NULL && childHwnd != 0x0)
+        //            {
+        //                qDebug() << "child hwnd = " << childHwnd;
+        //                processList[i].hwnd = childHwnd;
+        //                processList[i].className = "Chrome_RenderWidgetHostHWN";
+        //            }
+        //        }
     }
     return processList;
 }
@@ -112,7 +163,7 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(const QString &processNam
         quint64 pid = parts[1].toULongLong(&ok);
         if (ok)
         {
-            qDebug() << "pid = " << pid;
+            // qDebug() << "pid = " << pid;
             QVector<ProcessInfo> tmpList = getProcessInfo(pid);
             processList.append(tmpList);
         }
@@ -123,7 +174,7 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(quint64 pid)
 {
     QVector<HWND> processHwndList;
     QString processPath = getProcessPath(pid);
-    qDebug() << "pid = " << pid << ", processPath = " << processPath;
+    // qDebug() << "pid = " << pid << ", processPath = " << processPath;
     QFileInfo fileInfo(processPath);
     QString processName = fileInfo.fileName();
 
@@ -165,7 +216,7 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(quint64 pid)
     for (int i = 1; i < processHwndList.count(); i++)
     {
         HWND processHwnd = processHwndList[i];
-        if (processHwnd == nullptr)
+        if (processHwnd == nullptr || processHwnd == 0x0)
         {
             continue;
         }
@@ -181,6 +232,10 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(quint64 pid)
         }
         GetClassNameA(processHwnd, className, sizeof(className));
         processInfo.className = QString::fromLocal8Bit(className);
+        if (processInfo.className.isEmpty())
+        {
+            continue;
+        }
         processInfo.processPath = processPath;
         processInfo.processName = processName;
         processList.append(processInfo);

@@ -71,3 +71,7 @@ Thumbs.db
 *.dll
 *.exe
 
+/debug/cache/
+/debug/tmp/
+/release/cache/
+/release/tmp/

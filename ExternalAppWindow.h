@@ -64,6 +64,7 @@ class ExternalAppWindow : public QMainWindow
     QVector<ProcessInfo> externalAppList = QVector<ProcessInfo>();
     void initWindow();
     void initTabWidget();
+    void tabIndexChanged(int tabIndex);
     void displayScreenIndex();
     void startExternalProgram(AppConfig &app, bool isReload = false);
     bool startProcess(AppConfig &app);

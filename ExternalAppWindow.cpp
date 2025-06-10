@@ -259,32 +259,68 @@ void ExternalAppWindow::initTabWidget()
         return;
     }
 
-    QObject::connect(tabBar, &QTabBar::currentChanged, [=](int index) {
-        if (index < 0 || index >= ui->tabWidget->count())
-        {
-            return;
-        }
-        qDebug() << "QTabBar::currentChanged, index = " << index;
-        ui->tabWidget->setCurrentIndex(index);
-        ui->tabWidget->update();
-        ui->tabWidget->adjustSize();
+    QObject::connect(tabBar, &QTabBar::currentChanged, [=](int index) { tabIndexChanged(index); });
+    tabIndexChanged(0);
+}
+void ExternalAppWindow::tabIndexChanged(int index)
+{
+    if (index < 0 || index >= ui->tabWidget->count())
+    {
+        return;
+    }
+    qDebug() << "QTabBar::currentChanged, index = " << index;
+    ui->tabWidget->setCurrentIndex(index);
+    ui->tabWidget->update();
+    ui->tabWidget->adjustSize();
 
-        for (int i = 0; i < externalAppList.size(); i++)
+    for (int i = 0; i < externalAppList.size(); i++)
+    {
+        if (externalAppList[i].externalWindow == nullptr)
         {
-            if (externalAppList[i].externalWindow != nullptr)
+            continue;
+        }
+        //        HWND childHwnd;
+        // TODO: chrome窗口强制隐藏后，无法重新显示，暂未解决
+        if (externalAppList[i].tabName == tabBar->tabText(tabBar->currentIndex()))
+        {
+            if (externalAppList[i].processName.contains("chrome.exe"))
             {
-                if (externalAppList[i].tabName == tabBar->tabText(tabBar->currentIndex()))
-                {
-                    externalAppList[i].externalWindow->showFullScreen();
-                    break;
-                }
-                else
-                {
-                    externalAppList[i].externalWindow->hide();
-                }
+                ShowWindow(externalAppList[i].hwnd, true);
+                //                childHwnd = FindWindowExA(externalAppList[i].hwnd, NULL, "Intermediate D3D Window",
+                //                NULL); if (childHwnd != NULL && childHwnd != 0x0)
+                //                {
+                //                    ShowWindow(childHwnd, true);
+                //                }
+                //                childHwnd = FindWindowExA(externalAppList[i].hwnd, NULL,
+                //                "Chrome_RenderWidgetHostHWND", NULL); if (childHwnd != NULL && childHwnd != 0x0)
+                //                {
+                //                    ShowWindow(childHwnd, true);
+                //                }
+                //                SetForegroundWindow(externalAppList[i].hwnd);
+                //                externalAppList[i].externalWindow->setFlags(Qt::FramelessWindowHint | Qt::Tool);
+            }
+            externalAppList[i].externalWindow->showFullScreen();
+        }
+        else
+        {
+            qDebug() << "hide win form, titleName = " << externalAppList[i].titleName;
+            externalAppList[i].externalWindow->hide();
+            if (externalAppList[i].processName.contains("chrome.exe"))
+            {
+                ShowWindow(externalAppList[i].hwnd, false);
+                //                childHwnd = FindWindowExA(externalAppList[i].hwnd, NULL, "Intermediate D3D Window",
+                //                NULL); if (childHwnd != NULL && childHwnd != 0x0)
+                //                {
+                //                    ShowWindow(childHwnd, false);
+                //                }
+                //                childHwnd = FindWindowExA(externalAppList[i].hwnd, NULL,
+                //                "Chrome_RenderWidgetHostHWND", NULL); if (childHwnd != NULL && childHwnd != 0x0)
+                //                {
+                //                    ShowWindow(childHwnd, false);
+                //                }
             }
         }
-    });
+    }
 }
 void ExternalAppWindow::readLoadApps()
 {

@@ -21,19 +21,23 @@ class ProcessUtilsWin32 : public ProcessUtils
   public:
     ProcessUtilsWin32() : ProcessUtils(){};
     ~ProcessUtilsWin32() override;
-    ProcessInfo getProcessInfoByPath(const QString &processPath) override;
-    QVector<ProcessInfo> getProcessInfoByWindowTitle(const QString &winTitle) override;
-    QVector<ProcessInfo> getProcessInfo(const QString &processName) override;
-    QVector<ProcessInfo> getProcessInfo(const QString &processName, const QString &windowTitle) override;
-    QVector<ProcessInfo> getProcessInfo(quint64 pid) override;
-    QString getProcessPath(quint64 pid) override;
-    bool startProcess(const QString &processPath, const QString &startupArgs = "",
-                      const bool runAsAdmin = false) override;
-    void killProcess(QProcess *process) override;
-    void killProcess(quint64 pid) override;
-    void killProcess(QString processName) override;
+    /**
+     * @brief runAsAdministrators 以管理员身份运行
+     */
+    virtual int runAsAdministrators() override;
+    virtual ProcessInfo getProcessInfoByPath(const QString &processPath) override;
+    virtual QVector<ProcessInfo> getProcessInfoByWindowTitle(const QString &winTitle) override;
+    virtual QVector<ProcessInfo> getProcessInfo(const QString &processName) override;
+    virtual QVector<ProcessInfo> getProcessInfo(const QString &processName, const QString &windowTitle) override;
+    virtual QVector<ProcessInfo> getProcessInfo(quint64 pid) override;
+    virtual QString getProcessPath(quint64 pid) override;
+    virtual bool startProcess(const QString &processPath, const QString &startupArgs = "",
+                              const bool runAsAdmin = false) override;
+    virtual void killProcess(QProcess *process) override;
+    virtual void killProcess(quint64 pid) override;
+    virtual void killProcess(QString processName) override;
 
-    bool isProcessExist(const QString &processName) override;
+    virtual bool isProcessExist(const QString &processName) override;
 };
 
 #endif  // PROCESSUTILSWIN32_H

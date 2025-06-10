@@ -6,10 +6,9 @@ greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++11
 
-win32{
-    QMAKE_CXXFLAGS += /utf-8
-    QMAKE_CFLAGS += /utf-8
 
+
+win32{
     QMAKE_LFLAGS_WINDOWS += /SUBSYSTEM:WINDOWS
     QMAKE_LFLAGS_CONSOLE = /SUBSYSTEM:CONSOLE
 
@@ -17,6 +16,8 @@ win32{
     QMAKE_CFLAGS += /D_USING_V140_SDK71_
     QMAKE_CXXFLAGS += /D_USING_V140_SDK71_
 }
+
+TARGET = 多屏显示控制软件
 
 
 # The following define makes your compiler emit warnings if you use
@@ -54,6 +55,7 @@ FORMS += \
 
 TRANSLATIONS += \
     SoftwareSwitchingTool_zh_CN.ts
+
 
 OUT_DIR = release
 CONFIG(release, debug|release){
@@ -97,6 +99,8 @@ LIBS += -L$$DESTDIR -ltz.utils.base
 win32{
     msvc{
         LIBS+=-luser32
+        QMAKE_CXXFLAGS += /source-charset:utf-8 /execution-charset:utf-8
+        QMAKE_CFLAGS += /source-charset:utf-8 /execution-charset:utf-8
     }else{
         LIBS += -l Kernel32.dll -l Psapi
     }
@@ -104,7 +108,13 @@ win32{
 
 win32-g++{
     LIBS += -l Kernel32.dll -l Psapi
+    QMAKE_CXXFLAGS += -finput-charset=utf-8 -fexec-charset=utf-8
+    QMAKE_CFLAGS += -finput-charset=utf-8 -fexec-charset=utf-8
 }
+#QMAKE_RESOURCE_FLAGS += -charset utf-8
+#QMAKE_MOC += -DQT_NO_CAST_FROM_ASCII -DQT_NO_CAST_TO_ASCII
+#QMAKE_UIC += -tr tr8
+#QMAKE_RCC += -charset utf-8
 
 #指定动态链接库的优先查找路径
 unix{

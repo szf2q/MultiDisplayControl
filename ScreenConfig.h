@@ -29,6 +29,7 @@ struct MultiScreenConfig
     bool showIndex = true;
     bool sortScreen = true;
     bool debugMode = false;
+    bool runAsAdministrator = false;
     QList<ScreenConfig> screenList;
 };
 
