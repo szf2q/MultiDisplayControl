@@ -17,7 +17,7 @@ win32{
     QMAKE_CXXFLAGS += /D_USING_V140_SDK71_
 }
 
-TARGET = 多屏显示控制软件
+TARGET = MultiDisplayControl
 
 
 # The following define makes your compiler emit warnings if you use
