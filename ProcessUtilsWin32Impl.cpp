@@ -150,7 +150,7 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(const QString &processNam
     QStringList lines = output.split('\n');
     for (const QString &line : lines)
     {
-        if (!line.contains(processName, Qt::CaseInsensitive))
+        if (!line.contains(processName.left(25), Qt::CaseInsensitive))
         {
             continue;
         }
@@ -297,7 +297,7 @@ bool ProcessUtilsWin32::isProcessExist(const QString &processName)
     QStringList lines = output.split('\n');
     for (const QString &line : lines)
     {
-        if (line.contains(processName, Qt::CaseInsensitive))
+        if (line.contains(processName.left(25), Qt::CaseInsensitive))
         {
             return true;
         }
@@ -339,6 +339,7 @@ bool ProcessUtilsWin32::startProcess(const QString &processPath, const QString &
     while (!startSuccess && timeUsed < 5 * 1000)
     {
         startSuccess = isProcessExist(processName);
+        qDebug() << "check process exist, process = " << processName << ", exist = " << startSuccess;
         timeUsed += 500;
         Sleep(500);
     }

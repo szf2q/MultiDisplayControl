@@ -216,6 +216,10 @@ void reloadScreen(QMap<QString, ExternalAppWindow *> &winList)
     {
         qDebug() << "set default screen, i = " << i;
         ExternalAppWindow *tmpWin = winList.value(QString(i), nullptr);
+        if (tmpWin == nullptr)
+        {
+            continue;
+        }
         if (tmpWin->isHidden())
         {
             qDebug() << "app window is hidden, window title = " << tmpWin->windowTitle();
@@ -306,6 +310,7 @@ int main(int argc, char *argv[])
         {
             //            QTimer::singleShot(100, [=]() {
             //            QtConcurrent::run([=]() {
+            qDebug() << "start screen: " << i + 1 << ", app count = " << config.screenList[i].appCount;
             ExternalAppWindow *win = new ExternalAppWindow(config.screenList[i]);
             win->loadApps(false);
             QString key = QString(config.screenList[i].screenIndex);
