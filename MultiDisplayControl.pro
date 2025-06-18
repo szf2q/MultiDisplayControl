@@ -54,7 +54,7 @@ FORMS += \
     ExternalAppWindow.ui
 
 TRANSLATIONS += \
-    SoftwareSwitchingTool_zh_CN.ts
+    MultiDisplayControl_zh_CN.ts
 
 
 OUT_DIR = release
