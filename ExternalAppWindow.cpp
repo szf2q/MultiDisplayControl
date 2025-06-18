@@ -406,8 +406,6 @@ void ExternalAppWindow::loadWebPage(AppConfig &app)
     profile->setHttpCacheType(QWebEngineProfile::MemoryHttpCache);
     //禁用持久化Cookie
     profile->setPersistentCookiesPolicy(QWebEngineProfile::NoPersistentCookies);
-    view->setPage(new QWebEnginePage(profile, view));
-    view->load(QUrl(url));
     //禁用自动加载图片
     view->settings()->setAttribute(QWebEngineSettings::AutoLoadImages, true);
     //确保JS可用，懒加载依赖JS
@@ -415,15 +413,24 @@ void ExternalAppWindow::loadWebPage(AppConfig &app)
     //禁用滚动条
     view->settings()->setAttribute(QWebEngineSettings::ScrollAnimatorEnabled, false);
     view->settings()->setAttribute(QWebEngineSettings::ShowScrollBars, false);
+    view->settings()->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, true);
+    QWebEnginePage *page = new QWebEnginePage(profile, view);
+    view->setPage(page);
+    view->load(QUrl(url));
     // 启用2D加速
     // view->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, false);
     // 启用WebGL
     // view->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
     // 禁用插件
     // view->settings()->setAttribute(QWebEngineSettings::PluginsEnabled, false);
-    view->setStyleSheet("border:none;margin:0px;padding:0px;background:green;");
+    view->setStyleSheet("border:none;margin:0px;padding:0px;background:red;");
     QRect rect = currentScreen->geometry();
     view->resize(rect.width(), rect.height());
+    //    view->showMaximized();
+    connect(view, &QWebEngineView::loadFinished,
+            [=](bool ok) { qDebug() << "QWebEngineView::loadFinished: " << ok << ", url = " << url; });
+    connect(view->page(), &QWebEnginePage::loadFinished,
+            [=](bool ok) { qDebug() << "QWebEnginePage::loadFinished: " << ok << ", url = " << url; });
 
     QGraphicsScene *scene = new QGraphicsScene(this);
     scene->setSceneRect(0, 0, rect.width(), rect.height());
@@ -438,12 +445,15 @@ void ExternalAppWindow::loadWebPage(AppConfig &app)
     gpView->setToolTip(app.appPath);
     gpView->setStyleSheet("border:none;background-color:blue;background:blue;");
     gpView->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+    //    gpView->showMaximized();
     addWindowToTabWidget(gpView, app);
     gpView->viewport()->update();
     scene->update();
-    connect(qApp, &QApplication::aboutToQuit, [view, scene, gpView]() {
+    connect(qApp, &QApplication::aboutToQuit, [=]() {
         delete gpView;
         delete scene;
+        delete profile;
+        delete page;
         delete view;
     });
 }
@@ -632,6 +642,7 @@ bool ExternalAppWindow::startProcess(AppConfig &app)
     {
         if (!processUtils->startProcess(app.appPath, app.startupArgs, true))
         {
+            qDebug() << "start process failed, app path = " << app.appPath;
             processList.clear();
             return false;
         }
@@ -646,6 +657,8 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
     ProcessInfo process;
     int count = 0;
     bool isFind = false;
+    int findCount = 0;
+    qDebug() << "starting find process info, app = " << app.appPath;
     while (count < 30 * 100)
     {
         processList.clear();
@@ -653,12 +666,17 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
         if (processList.size() == 0)
         {
             count++;
-            Sleep(100);
+            Sleep(200);
             continue;
         }
         process = processList[processList.size() - 1];
         isFind = true;
-        break;
+        findCount++;
+        Sleep(200);
+        if (findCount >= 5)
+        {
+            break;
+        }
     }
     if (!isFind)
     {

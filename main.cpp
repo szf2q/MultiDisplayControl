@@ -7,6 +7,7 @@
 #include <QVector>
 #include <QWebEngineProfile>
 #include <QWebEngineView>
+#include <QtConcurrent/QtConcurrent>
 #include "ExternalAppWindow.h"
 #include "GlobalKeyWatcher.h"
 #include "GlobalVariants.h"
@@ -208,23 +209,26 @@ void screenSwitchWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWin
                          switchScreen(winList, screenIndex, keyMessage);
                      });
 }
-
+void reloadScreen(QMap<QString, ExternalAppWindow *> &winList)
+{
+    int screenCount = QGuiApplication::screens().size();
+    for (int i = 1; i <= screenCount; i++)
+    {
+        qDebug() << "set default screen, i = " << i;
+        ExternalAppWindow *tmpWin = winList.value(QString(i), nullptr);
+        if (tmpWin->isHidden())
+        {
+            qDebug() << "app window is hidden, window title = " << tmpWin->windowTitle();
+            continue;
+        }
+        tmpWin->setToDefaultScreen(true);
+    }
+}
 void reloadScreenWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
 {
     QObject::connect(&watcher, &GlobalKeyWatcher::altAndRPressed, [&winList]() {
         qDebug() << "捕获到组合键: Alt + R，重新设置各窗口的显示位置";
-        int screenCount = QGuiApplication::screens().size();
-        for (int i = 1; i <= screenCount; i++)
-        {
-            qDebug() << "set default screen, i = " << i;
-            ExternalAppWindow *tmpWin = winList.value(QString(i), nullptr);
-            if (tmpWin->isHidden())
-            {
-                qDebug() << "app window is hidden, window title = " << tmpWin->windowTitle();
-                continue;
-            }
-            tmpWin->setToDefaultScreen(true);
-        }
+        reloadScreen(winList);
     });
 }
 void closeAppsWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
@@ -243,11 +247,17 @@ int main(int argc, char *argv[])
 {
     try
     {
-        QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
-        QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+        //        QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+        //        QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+        //        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
         //        QLoggingCategory::setFilterRules("qt.webenginecontext.debug=true");
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-logging --v=0");
+        qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
+                // "--disable-gpu "
+                // "--disable-software-rasterizer "
+                // "--no-sandbox "
+                "--disable-features=Win32kLockdown"       //解决Win10下QtWebEngineProcess.exe崩溃的问题
+                "--enable-logging --v=0");                // Chrome日志，v=0不输出日志，v=1输出详细日志
+        qputenv("QTWEBENGINE_REMOTE_DEBUGGING", "9222");  //启用远程调试，通过http://127.0.0.1:9222访问
         QApplication a(argc, argv);
         QNetworkProxyFactory::setUseSystemConfiguration(false);
 
@@ -290,18 +300,20 @@ int main(int argc, char *argv[])
             utils->killProcess("wpsupdate.exe");
             delete utils;
         }
-        QMap<QString, ExternalAppWindow *> *tmpWinList = &GlobalVariants::winList;
+
+        //        QMap<QString, ExternalAppWindow *> *tmpWinList = &GlobalVariants::winList;
         for (int i = 0; i < qMin(config.count, QGuiApplication::screens().count()); i++)
         {
-            QTimer::singleShot(100, [=]() {
-                ExternalAppWindow *win = new ExternalAppWindow(config.screenList[i]);
-                win->loadApps(false);
-                QString key = QString(config.screenList[i].screenIndex);
-                QMutex &mutex = globalMutex;
-                mutex.lock();
-                tmpWinList->insert(key, win);
-                mutex.unlock();
-            });
+            //            QTimer::singleShot(100, [=]() {
+            //            QtConcurrent::run([=]() {
+            ExternalAppWindow *win = new ExternalAppWindow(config.screenList[i]);
+            win->loadApps(false);
+            QString key = QString(config.screenList[i].screenIndex);
+            //                QMutex &mutex = globalMutex;
+            //                mutex.lock();
+            GlobalVariants::winList.insert(key, win);
+            //                mutex.unlock();
+            //            });
         }
 
         Sleep(500);
@@ -311,6 +323,7 @@ int main(int argc, char *argv[])
         screenSwitchWatcher(watcher, GlobalVariants::winList);
         reloadScreenWatcher(watcher, GlobalVariants::winList);
         closeAppsWatcher(watcher, GlobalVariants::winList);
+        QTimer::singleShot(500, [=]() { reloadScreen(GlobalVariants::winList); });
         return a.exec();
     }
     catch (const std::exception &e)

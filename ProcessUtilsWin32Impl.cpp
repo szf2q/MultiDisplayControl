@@ -336,7 +336,7 @@ bool ProcessUtilsWin32::startProcess(const QString &processPath, const QString &
     ProcessInfo processInfo;
     int timeUsed = 0;
     bool startSuccess = false;
-    while (!startSuccess && timeUsed < 30 * 1000)
+    while (!startSuccess && timeUsed < 5 * 1000)
     {
         startSuccess = isProcessExist(processName);
         timeUsed += 500;
