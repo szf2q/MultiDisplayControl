@@ -9,12 +9,13 @@ CONFIG += c++11
 
 
 win32{
-    QMAKE_LFLAGS_WINDOWS += /SUBSYSTEM:WINDOWS
-    QMAKE_LFLAGS_CONSOLE = /SUBSYSTEM:CONSOLE
+#    QMAKE_LFLAGS_WINDOWS += /SUBSYSTEM:WINDOWS
+#    QMAKE_LFLAGS_CONSOLE = /SUBSYSTEM:CONSOLE
 
-    DEFINES += _ATL_XP_TARGETING
-    QMAKE_CFLAGS += /D_USING_V140_SDK71_
-    QMAKE_CXXFLAGS += /D_USING_V140_SDK71_
+#    DEFINES += _ATL_XP_TARGETING
+#    QMAKE_CFLAGS += /D_USING_V140_SDK71_
+#    QMAKE_CXXFLAGS += /D_USING_V140_SDK71_
+#    QMAKE_CXXFLAGS += /winsdkversion:10.0.18362.0
 }
 
 TARGET = MultiDisplayControl
@@ -107,7 +108,7 @@ win32{
 }
 
 win32-g++{
-    LIBS += -l Kernel32.dll -l Psapi
+#    LIBS += -l Kernel32 -l Psapi
     QMAKE_CXXFLAGS += -finput-charset=utf-8 -fexec-charset=utf-8
     QMAKE_CFLAGS += -finput-charset=utf-8 -fexec-charset=utf-8
 }
@@ -123,6 +124,9 @@ unix{
     #指定动态链接库的优先查找路径（仅linux有效）
     QMAKE_RPATHDIR += $$DESTDIR
 }
+
+#INCLUDEPATH += F:\Qt\Qt5.14.2\5.14.2\msvc2017_64\include
+#INCLUDEPATH += F:\Qt\Qt5.14.2\5.14.2\msvc2017_64\include\QtWebEngineWidgets
 
 RESOURCES += \
     resource.qrc

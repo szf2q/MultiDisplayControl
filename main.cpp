@@ -235,6 +235,7 @@ void reloadScreenWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWin
         reloadScreen(winList);
     });
 }
+
 void closeAppsWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
 {
     QObject::connect(&watcher, &GlobalKeyWatcher::quitKeyPressed, [&winList](const QString &keyMessage) {
@@ -251,10 +252,6 @@ int main(int argc, char *argv[])
 {
     try
     {
-        //        QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
-        //        QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-        //        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
-        //        QLoggingCategory::setFilterRules("qt.webenginecontext.debug=true");
         qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
                 // "--disable-gpu "
                 // "--disable-software-rasterizer "
@@ -305,29 +302,23 @@ int main(int argc, char *argv[])
             delete utils;
         }
 
-        //        QMap<QString, ExternalAppWindow *> *tmpWinList = &GlobalVariants::winList;
         for (int i = 0; i < qMin(config.count, QGuiApplication::screens().count()); i++)
         {
-            //            QTimer::singleShot(100, [=]() {
-            //            QtConcurrent::run([=]() {
             qDebug() << "start screen: " << i + 1 << ", app count = " << config.screenList[i].appCount;
             ExternalAppWindow *win = new ExternalAppWindow(config.screenList[i]);
             win->loadApps(false);
             QString key = QString(config.screenList[i].screenIndex);
-            //                QMutex &mutex = globalMutex;
-            //                mutex.lock();
             GlobalVariants::winList.insert(key, win);
-            //                mutex.unlock();
-            //            });
         }
 
         Sleep(500);
         QTimer timer;
-        GlobalKeyWatcher watcher;
+        GlobalKeyWatcher::watcher.init();
         closeUndesiredWindowTimer(timer);
-        screenSwitchWatcher(watcher, GlobalVariants::winList);
-        reloadScreenWatcher(watcher, GlobalVariants::winList);
-        closeAppsWatcher(watcher, GlobalVariants::winList);
+        screenSwitchWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
+        reloadScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
+        closeAppsWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
+
         QTimer::singleShot(500, [=]() { reloadScreen(GlobalVariants::winList); });
         return a.exec();
     }

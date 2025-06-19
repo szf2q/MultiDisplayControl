@@ -13,14 +13,12 @@ class GlobalKeyWatcher : public QObject, public QAbstractNativeEventFilter
 {
     Q_OBJECT
   public:
-    HHOOK keyboardHook;
-    int m_scrollLockCount;
-    QDateTime m_lastScrollLockTime;
+    static GlobalKeyWatcher watcher;
     GlobalKeyWatcher(QObject *parent = nullptr);
     ~GlobalKeyWatcher(void);
+    void init();
+    void registerHotkey();
     bool nativeEventFilter(const QByteArray &eventType, void *message, long *result) override;
-    LRESULT CALLBACK keyProcessedProc(int nCode, WPARAM wParam, LPARAM lParam);
-    bool processKeyPress(int key);
 
   signals:
     void switchScreenKeyPressed(const int &screenIndex, const QString &keyMessage);
