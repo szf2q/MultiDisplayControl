@@ -1,8 +1,41 @@
 QT       += core gui network axcontainer
-win32:msvc{
-    QT   += webenginewidgets webchannel
-}
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+
+# 网页渲染后端（编译期开关）：
+#   默认使用 QWebEngineView（QtWebEngine，内核随 Qt 版本固定为 Chromium 77）；
+#   取消下面一行的注释即切换为 QCefView（CEF 内核），可独立升级 Chromium 内核，
+#   以规避较新前端技术栈在旧内核上的兼容性问题。
+# 重要限制：
+#   1. CEF 官方 Windows 二进制由 MSVC 构建，MinGW 无法链接，Windows 下必须使用 MSVC 工具链；
+#   2. 为兼容 Windows 7，CEF 需选用 Chromium <= 109 的发行版（Chromium 110 起已放弃 Win7）。
+# DEFINES += USE_QCEFVIEW
+
+contains(DEFINES, USE_QCEFVIEW) {
+    # ---- QCefView 与 CEF 的头文件/库路径，请按实际部署位置调整 ----
+    QCEFVIEW_ROOT = $$PWD/3rdparty/QCefView
+    CEF_ROOT      = $$PWD/3rdparty/cef
+
+    INCLUDEPATH += $$QCEFVIEW_ROOT/include
+    INCLUDEPATH += $$CEF_ROOT
+
+    win32 {
+        LIBS += -L$$QCEFVIEW_ROOT/lib -lQCefView
+        LIBS += -L$$CEF_ROOT/Release -llibcef
+        # 运行期须将 libcef.dll、chrome_elf.dll、QCefView.dll、icudtl.dat、locales/、*.pak
+        # 拷贝到 exe 同级目录，否则 CEF 初始化会失败
+    } else:unix {
+        LIBS += -L$$QCEFVIEW_ROOT/lib -lQCefView
+        LIBS += -L$$CEF_ROOT/Release -lcef
+        # 运行期须将 libcef.so、libQCefView.so、icudtl.dat、locales/、*.pak 放入可搜索路径
+    }
+
+    SOURCES += CefWebView.cpp
+    HEADERS += CefWebView.h
+} else {
+    win32:msvc {
+        QT   += webenginewidgets webchannel
+    }
+}
 
 CONFIG += c++11
 

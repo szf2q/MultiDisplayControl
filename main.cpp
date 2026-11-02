@@ -2,13 +2,20 @@
 
 #include <windows.h>
 #include <QDebug>
+#include <QDir>
 #include <QMap>
 #include <QSharedPointer>
 #include <QTimer>
 #include <QVector>
-#include <QWebEngineProfile>
-#include <QWebEngineView>
+#ifndef USE_QCEFVIEW
+#    include <QWebEngineProfile>
+#    include <QWebEngineView>
+#endif
 #include <QtConcurrent/QtConcurrent>
+#ifdef USE_QCEFVIEW
+#    include <QCefConfig.h>
+#    include <QCefContext.h>
+#endif
 #include "ExternalAppWindow.h"
 #include "GlobalKeyWatcher.h"
 #include "GlobalVariants.h"
@@ -261,6 +268,7 @@ int main(int argc, char *argv[])
 {
     try
     {
+#ifndef USE_QCEFVIEW
         qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
                 // "--disable-gpu "
                 // "--disable-software-rasterizer "
@@ -273,6 +281,7 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_WEBENGINE_REMOTE_DEBUGGING
         qputenv("QTWEBENGINE_REMOTE_DEBUGGING", "9222");  //启用远程调试，通过http://127.0.0.1:9222访问
 #endif
+#endif  // USE_QCEFVIEW
         QApplication a(argc, argv);
         QNetworkProxyFactory::setUseSystemConfiguration(false);
 
@@ -290,6 +299,26 @@ int main(int argc, char *argv[])
                 return ret;
             }
         }
+
+#ifdef USE_QCEFVIEW
+        // ==================== CEF(QCefView) 初始化 ====================
+        // 约束说明：
+        //   1. 全进程只能有一个 QCefContext，且必须在创建任何 QCefView 之前初始化、
+        //      在所有 QCefView 销毁之后析构，因此声明在 main 作用域内，生命周期覆盖整个事件循环；
+        //   2. CEF 只支持全进程唯一的缓存目录，所有网页共用（不再按应用/按屏隔离缓存与 Cookie）；
+        //   3. 为兼容 Windows 7，CEF 版本需选用 Chromium <= 109 的发行版。
+        QString cefCachePath = QDir(QApplication::applicationDirPath()).filePath("cefCache");
+        QDir().mkpath(cefCachePath);
+        QCefConfig cefConfig;
+        cefConfig.setLogLevel(QCefConfig::LOGSEVERITY_DEFAULT);
+        cefConfig.setCachePath(QDir::toNativeSeparators(cefCachePath));
+        // 关闭 GPU 加速，规避部分机型/驱动下的渲染异常；如现场需要硬件加速请删除该开关
+        cefConfig.addCommandLineSwitch("disable-gpu");
+        // 远程调试端口默认关闭，需要调试网页时临时打开即可（注意：开启后本机任意进程可接管页面）
+        // cefConfig.setRemoteDebuggingPort(9222);
+        QCefContext cefContext(&a, argc, argv, &cefConfig);
+        // =============================================================
+#endif
 
         qDebug() << "config.count() = " << config.count;
         bool hasPpt = false;

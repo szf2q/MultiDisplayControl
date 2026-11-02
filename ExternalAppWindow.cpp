@@ -1,6 +1,17 @@
 #include "ExternalAppWindow.h"
 
+#include <QUrl>
+
 #include "ui_ExternalAppWindow.h"
+
+#ifndef USE_QCEFVIEW
+#    include <QGraphicsScene>
+#    include <QGraphicsView>
+#    include <QWebEnginePage>
+#    include <QWebEngineProfile>
+#    include <QWebEngineSettings>
+#    include <QWebEngineView>
+#endif
 
 ExternalAppWindow::ExternalAppWindow(ScreenConfig config, QWidget *parent) :
     QMainWindow(parent), ui(new Ui::ExternalAppWindow)
@@ -424,6 +435,29 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
 
 void ExternalAppWindow::loadWebPage(AppConfig &app)
 {
+#ifdef USE_QCEFVIEW
+    loadWebPageByCef(app);
+#else
+    loadWebPageByWebEngine(app);
+#endif
+}
+
+#ifdef USE_QCEFVIEW
+void ExternalAppWindow::loadWebPageByCef(AppConfig &app)
+{
+    QString url = app.appPath;
+    qDebug() << "load web page by QCefView, url = " << url;
+    // CEF 只支持全进程唯一的缓存目录（已在 main() 中通过 QCefConfig::setCachePath 统一设置），
+    // 因此这里不再像 QWebEngineView 那样按应用维度创建独立 profile 做缓存/Cookie 隔离。
+    CefWebView *cefWebView = new CefWebView();
+    cefWebView->load(QUrl(url));
+    addWindowToTabWidget(cefWebView, app);
+}
+
+#else
+
+void ExternalAppWindow::loadWebPageByWebEngine(AppConfig &app)
+{
     QString url = app.appPath;
     qDebug() << "url = " << url;
     QWebEngineView *view = new QWebEngineView();
@@ -488,6 +522,8 @@ void ExternalAppWindow::loadWebPage(AppConfig &app)
     webSceneList.append(scene);
     webProfileList.append(profile);
 }
+
+#endif  // USE_QCEFVIEW
 
 void ExternalAppWindow::startAndPlayPpt(AppConfig &app)
 {
@@ -750,6 +786,7 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
 ExternalAppWindow::~ExternalAppWindow()
 {
     qDebug() << "MainWindow destructor";
+#ifndef USE_QCEFVIEW
     // 先释放网页相关的场景与 profile：QGraphicsScene 会级联释放其内部的 QWebEngineView（进而释放 page），
     // 因此必须先删除场景，再删除 QWebEngineProfile，避免 profile 被提前销毁导致仍在使用的 page/view 崩溃。
     for (int i = webSceneList.size() - 1; i >= 0; i--)
@@ -762,6 +799,7 @@ ExternalAppWindow::~ExternalAppWindow()
         delete webProfileList[i];
     }
     webProfileList.clear();
+#endif
     delete ui;
     for (int i = externalAppList.size() - 1; i >= 0; i--)
     {
