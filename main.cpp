@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <QDebug>
 #include <QMap>
+#include <QSharedPointer>
 #include <QTimer>
 #include <QVector>
 #include <QWebEngineProfile>
@@ -97,16 +98,18 @@ void setAppStyle()
 
 void closeUndesiredWindowTimer(QTimer &timer)
 {
-    bool isTimerRunning = false;
+    // 使用共享指针在 lambda 中按值捕获运行标志，避免按引用捕获局部变量导致的悬垂引用（未定义行为）
+    QSharedPointer<bool> isTimerRunning = QSharedPointer<bool>::create(false);
     timer.setTimerType(Qt::PreciseTimer);
 
-    ProcessUtils *processUtils = ProcessFactory::newInstance();
-    QObject::connect(&timer, &QTimer::timeout, [processUtils, &isTimerRunning]() {
-        if (isTimerRunning)
+    // 使用共享指针管理 ProcessUtils 实例，lambda 捕获后随 lambda 生命周期自动释放，避免内存泄漏
+    QSharedPointer<ProcessUtils> processUtils(ProcessFactory::newInstance());
+    QObject::connect(&timer, &QTimer::timeout, [processUtils, isTimerRunning]() {
+        if (*isTimerRunning)
         {
             return;
         }
-        isTimerRunning = true;
+        *isTimerRunning = true;
         QVector<ProcessInfo> processList = processUtils->getProcessInfo("chrome.exe");
         for (ProcessInfo process : processList)
         {
@@ -133,7 +136,7 @@ void closeUndesiredWindowTimer(QTimer &timer)
             }
         }
         processList.clear();
-        isTimerRunning = false;
+        *isTimerRunning = false;
     });
     timer.start(500);
 }
@@ -151,7 +154,7 @@ void switchScreen(QMap<QString, ExternalAppWindow *> &winList, const int &screen
     int primaryWinIndex = -1;
     for (int i = 1; i <= screenCount; i++)
     {
-        ExternalAppWindow *tmpWin = winList.value(QString(i), nullptr);
+        ExternalAppWindow *tmpWin = winList.value(QString::number(i), nullptr);
         if (tmpWin == nullptr)
         {
             continue;
@@ -169,7 +172,14 @@ void switchScreen(QMap<QString, ExternalAppWindow *> &winList, const int &screen
         qDebug() << "primaryWin = nullptr";
         return;
     }
-    if (winList.value(QString(screenIndex))->isHidden() || primaryWin->isHidden())
+    // 按屏幕序号取目标窗体，先判空再访问，避免窗体未创建时解引用空指针崩溃
+    ExternalAppWindow *targetWin = winList.value(QString::number(screenIndex), nullptr);
+    if (targetWin == nullptr)
+    {
+        qDebug() << "targetWin = nullptr, screenIndex = " << screenIndex;
+        return;
+    }
+    if (targetWin->isHidden() || primaryWin->isHidden())
     {
         qDebug() << "primaryWin isHidden";
         return;
@@ -177,9 +187,8 @@ void switchScreen(QMap<QString, ExternalAppWindow *> &winList, const int &screen
     if (primaryWinIndex != screenIndex)
     {
         //            qDebug() << "primaryWinIndex != num， num = " << num;
-        ExternalAppWindow *tmpWin = winList.value(QString(screenIndex));
-        tmpWin->setScreen(primaryWin->getDefaultScreen());
-        primaryWin->setScreen(tmpWin->getDefaultScreen());
+        targetWin->setScreen(primaryWin->getDefaultScreen());
+        primaryWin->setScreen(targetWin->getDefaultScreen());
     }
     else
     {
@@ -189,8 +198,8 @@ void switchScreen(QMap<QString, ExternalAppWindow *> &winList, const int &screen
     for (int i = 1; i <= screenCount; i++)
     {
         //            qDebug() << "set default screen, i = " << i;
-        ExternalAppWindow *tmpWin = winList.value(QString(i), nullptr);
-        if (tmpWin->isHidden())
+        ExternalAppWindow *tmpWin = winList.value(QString::number(i), nullptr);
+        if (tmpWin == nullptr || tmpWin->isHidden())
         {
             continue;
         }
@@ -215,7 +224,7 @@ void reloadScreen(QMap<QString, ExternalAppWindow *> &winList)
     for (int i = 1; i <= screenCount; i++)
     {
         qDebug() << "set default screen, i = " << i;
-        ExternalAppWindow *tmpWin = winList.value(QString(i), nullptr);
+        ExternalAppWindow *tmpWin = winList.value(QString::number(i), nullptr);
         if (tmpWin == nullptr)
         {
             continue;
@@ -256,9 +265,14 @@ int main(int argc, char *argv[])
                 // "--disable-gpu "
                 // "--disable-software-rasterizer "
                 // "--no-sandbox "
-                "--disable-features=Win32kLockdown"       //解决Win10下QtWebEngineProcess.exe崩溃的问题
-                "--enable-logging --v=0");                // Chrome日志，v=0不输出日志，v=1输出详细日志
+                "--disable-features=Win32kLockdown "       //解决Win10下QtWebEngineProcess.exe崩溃的问题
+                "--enable-logging --v=0");                 // Chrome日志，v=0不输出日志，v=1输出详细日志
+        // 远程调试端口 9222 默认关闭：开启后本机任意进程均可通过 http://127.0.0.1:9222 接管页面，存在安全风险。
+        // 仅在需要调试网页时，取消下面宏定义的注释后重新编译。
+        // #define ENABLE_WEBENGINE_REMOTE_DEBUGGING
+#ifdef ENABLE_WEBENGINE_REMOTE_DEBUGGING
         qputenv("QTWEBENGINE_REMOTE_DEBUGGING", "9222");  //启用远程调试，通过http://127.0.0.1:9222访问
+#endif
         QApplication a(argc, argv);
         QNetworkProxyFactory::setUseSystemConfiguration(false);
 
@@ -307,7 +321,8 @@ int main(int argc, char *argv[])
             qDebug() << "start screen: " << i + 1 << ", app count = " << config.screenList[i].appCount;
             ExternalAppWindow *win = new ExternalAppWindow(config.screenList[i]);
             win->loadApps(false);
-            QString key = QString(config.screenList[i].screenIndex);
+            // 使用 QString::number 显式构造十进制字符串键，避免 QString(int) 命中 QChar(int) 重载生成不可见控制字符键
+            QString key = QString::number(config.screenList[i].screenIndex);
             GlobalVariants::winList.insert(key, win);
         }
 

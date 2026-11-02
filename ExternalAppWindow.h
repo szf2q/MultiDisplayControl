@@ -33,6 +33,9 @@ namespace Ui
 }  // namespace Ui
 QT_END_NAMESPACE
 
+class QGraphicsScene;
+class QWebEngineProfile;
+
 class ExternalAppWindow : public QMainWindow
 {
     Q_OBJECT
@@ -62,6 +65,17 @@ class ExternalAppWindow : public QMainWindow
     Ui::ExternalAppWindow *ui;
     ProcessUtils *processUtils;
     QVector<ProcessInfo> externalAppList = QVector<ProcessInfo>();
+    /**
+     * @brief 网页视图使用的 QGraphicsScene 列表
+     * @note QGraphicsScene 会接管通过 addWidget 加入的 QWidget（即 QWebEngineView）的所有权，
+     *       因此必须在析构函数中显式删除场景（级联释放 view/page），且删除顺序需早于 QWebEngineProfile
+     */
+    QList<QGraphicsScene *> webSceneList;
+    /**
+     * @brief 网页视图使用的 QWebEngineProfile 列表
+     * @note profile 无父对象，必须在 page/view 释放之后再手动释放，否则会导致仍在使用的 profile 被提前销毁
+     */
+    QList<QWebEngineProfile *> webProfileList;
     void initWindow();
     void initTabWidget();
     void tabIndexChanged(int tabIndex);

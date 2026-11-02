@@ -71,6 +71,11 @@ bool GlobalKeyWatcher::nativeEventFilter(const QByteArray &eventType, void *mess
             return true;
         }
     }
-    return false;
+#else
+    // 非 Windows 平台不处理原生事件，显式忽略入参以避免未使用参数告警
+    Q_UNUSED(eventType);
+    Q_UNUSED(message);
 #endif
+    // return 语句必须放在条件编译之外，保证所有平台都有明确返回值，避免非 Windows 平台出现未定义行为
+    return false;
 }

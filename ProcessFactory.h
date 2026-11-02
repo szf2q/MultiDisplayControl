@@ -28,7 +28,7 @@ class ProcessFactory
         return new ProcessUtilsLinux();
 #else
         qWarning() << "Unsupported platform!";
-        reutrn nullptr;
+        return nullptr;
 #endif
     }
 };

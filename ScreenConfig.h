@@ -9,15 +9,16 @@ struct AppConfig
     QString windowTitle;
     QString tabName;
     QString startupArgs;
-    int tabIndex;
+    // 标签页索引，-1 表示尚未分配到标签页
+    int tabIndex = -1;
 };
 
 struct ScreenConfig
 {
-    int screenIndex;
-    bool sortScreen;
+    int screenIndex = 0;
+    bool sortScreen = false;
     bool showIndex = true;
-    int appCount;
+    int appCount = 0;
     QString screenTitle;
     bool debugMode = false;
     int tabOffsetX = 0;

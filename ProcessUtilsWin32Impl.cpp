@@ -325,13 +325,21 @@ bool ProcessUtilsWin32::startProcess(const QString &processPath, const QString &
     qDebug() << "runAsAdmin = " << runAsAdmin << "processPath = " << tmpPath << "args = " << args;
     if (runAsAdmin)
     {
-        p->setNativeArguments("runas");
+        // 说明：QProcess::setNativeArguments 仅对非静态的 startDetached(qint64 *) 生效，
+        // 这里调用的是静态 startDetached，且 "runas" 也不是 ShellExecute 动词，
+        // 因此并不能真正提权。真正的按需提权需改用 ShellExecuteEx 的 runas 动词，
+        // 但那会导致每个外部应用启动时都弹出 UAC 授权框，属功能回归，故此处保持原有行为不变。
         p->startDetached(tmpPath, args);
+        // 已分离启动，QProcess 对象不再被使用，及时释放避免内存泄漏
+        delete p;
+        p = nullptr;
     }
     else
     {
         p->setWorkingDirectory(appDir);
         p->start(tmpPath, args);
+        // 注意：QProcess 析构会结束仍在运行的子进程，因此该对象必须常驻（不能 delete），
+        // 以保证通过 QProcess 启动的外部应用继续运行。
     }
     ProcessInfo processInfo;
     int timeUsed = 0;

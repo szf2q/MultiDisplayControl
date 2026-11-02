@@ -10,8 +10,8 @@ ExternalAppWindow::ExternalAppWindow(ScreenConfig config, QWidget *parent) :
     this->setAttribute(Qt::WA_NativeWindow);
     this->setContentsMargins(0, 0, 0, 0);
     this->centralWidget()->setContentsMargins(0, 0, 0, 0);
-    this->setMinimumSize(QGuiApplication::primaryScreen()->geometry().width(),
-                         QGuiApplication::primaryScreen()->geometry().height());
+    // 注意：这里不再按主屏分辨率设置最小尺寸。多屏场景下副屏分辨率可能小于主屏，
+    // 若固定按主屏尺寸设置最小尺寸会导致副屏上的窗体无法完整铺满/被撑破。
 
     this->config = config;
     if (config.screenTitle.isEmpty())
@@ -28,8 +28,6 @@ ExternalAppWindow::ExternalAppWindow(ScreenConfig config, QWidget *parent) :
 
     ui->tabWidget->setContentsMargins(0, 0, 0, 0);
     ui->tabWidget->setDocumentMode(true);
-    ui->tabWidget->setMinimumSize(QGuiApplication::primaryScreen()->geometry().width(),
-                                  QGuiApplication::primaryScreen()->geometry().height());
     ui->tabWidget->tabBar()->setDocumentMode(true);
     if (!config.debugMode)
     {
@@ -107,10 +105,28 @@ void ExternalAppWindow::initWindow()
 
     if (this->defaultScreen == nullptr)
     {
-        this->defaultScreen = screenList[config.screenIndex - 1];
-        this->isPrimaryScreen = (screenList[config.screenIndex - 1] == QGuiApplication::primaryScreen());
+        // 屏幕索引可能大于实际可用屏幕数量（例如配置了多屏但实际只接入一屏），
+        // 这里先钳制到合法区间，避免数组越界访问导致崩溃
+        int validScreenIndex = config.screenIndex;
+        if (validScreenIndex < 1)
+        {
+            validScreenIndex = 1;
+        }
+        if (validScreenIndex > screenList.size())
+        {
+            qDebug() << "initWindow, screenIndex out of range, screenIndex = " << config.screenIndex
+                     << ", screenList.size() = " << screenList.size();
+            validScreenIndex = screenList.size();
+        }
+        this->defaultScreen = screenList[validScreenIndex - 1];
+        this->isPrimaryScreen = (this->defaultScreen == QGuiApplication::primaryScreen());
+        // 使用钳制后的合法索引设置屏幕，保证与 defaultScreen 保持一致
+        setScreen(validScreenIndex);
     }
-    setScreen(config.screenIndex);
+    else
+    {
+        setScreen(config.screenIndex);
+    }
     this->displayScreenIndex();
 }
 void ExternalAppWindow::displayScreenIndex()
@@ -333,7 +349,12 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
 {
     if (!isReload)
     {
-        startProcess(app);
+        // 启动失败时直接返回，避免后续 findProcessInfo 无谓地长时间等待
+        if (!startProcess(app))
+        {
+            qDebug() << "start process failed, app path = " << app.appPath;
+            return;
+        }
     }
     ProcessInfo process = findProcessInfo(app);
     if (!process.hwnd)
@@ -361,9 +382,26 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
         ui->tabWidget->addTab(new QTabWidget(), tabTitle);
         ui->tabWidget->setCurrentIndex(0);
         app.tabIndex = tabBar->count() - 1;
-        process.tabName = app.tabName;
-        externalAppList.append(process);
-        connect(qApp, &QApplication::aboutToQuit, [=]() { delete externanlWindow; });
+        // findProcessInfo 已将本 app 的进程信息追加到 externalAppList，此处不再重复追加；
+        // 只需把已登记项的 tabName 同步为与 tabBar 文本一致的带序号前缀标题，
+        // 否则 show_index=true 时按标签名匹配会恒不成立，导致切页时该窗口被误隐藏（标签空白）。
+        process.tabName = tabTitle;
+        bool isRegistered = false;
+        for (int i = 0; i < externalAppList.size(); i++)
+        {
+            if (externalAppList[i].tabName == app.tabName)
+            {
+                externalAppList[i].tabName = tabTitle;
+                externalAppList[i].externalWindow = externanlWindow;
+                isRegistered = true;
+                break;
+            }
+        }
+        if (!isRegistered)
+        {
+            externalAppList.append(process);
+        }
+        // 窗体所有权已由本对象析构函数统一释放，这里不再注册 aboutToQuit 回收，避免重复释放
         return;
     }
     //创建嵌入的容器窗口
@@ -379,19 +417,13 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
     QRect rect = currentScreen->geometry();
     externanlWindow->setGeometry(0, 0, rect.width(), rect.height());
     addWindowToTabWidget(container, app);
-    connect(qApp, &QApplication::aboutToQuit, [=]() {
-        delete externanlWindow;
-        delete container;
-    });
+    // container 已通过 addWindowToTabWidget 挂入 tabWidget，随 ui 一并释放；
+    // 且 createWindowContainer 会接管 externanlWindow 的所有权，随 container 释放。
+    // 因此这里不再注册 aboutToQuit 回收，避免与析构函数重复释放。
 }
 
 void ExternalAppWindow::loadWebPage(AppConfig &app)
 {
-    QStringList argList = app.startupArgs.split(" ");
-    if (argList.size() <= 0)
-    {
-        return;
-    }
     QString url = app.appPath;
     qDebug() << "url = " << url;
     QWebEngineView *view = new QWebEngineView();
@@ -432,7 +464,10 @@ void ExternalAppWindow::loadWebPage(AppConfig &app)
     connect(view->page(), &QWebEnginePage::loadFinished,
             [=](bool ok) { qDebug() << "QWebEnginePage::loadFinished: " << ok << ", url = " << url; });
 
-    QGraphicsScene *scene = new QGraphicsScene(this);
+    // 场景不指定父对象，登记到 webSceneList 中由析构函数统一释放。
+    // QGraphicsScene 会接管通过 addWidget 加入的 QWebEngineView 的所有权（级联释放 view/page），
+    // 因此不能在此处再注册 aboutToQuit 回收 view/page，否则会重复释放。
+    QGraphicsScene *scene = new QGraphicsScene();
     scene->setSceneRect(0, 0, rect.width(), rect.height());
     scene->addWidget(view);
     QGraphicsView *gpView = new QGraphicsView(scene);
@@ -449,13 +484,9 @@ void ExternalAppWindow::loadWebPage(AppConfig &app)
     addWindowToTabWidget(gpView, app);
     gpView->viewport()->update();
     scene->update();
-    connect(qApp, &QApplication::aboutToQuit, [=]() {
-        delete gpView;
-        delete scene;
-        delete profile;
-        delete page;
-        delete view;
-    });
+    // 登记场景与 profile，交由析构函数按“先场景（级联释放 view/page）、后 profile”的顺序释放
+    webSceneList.append(scene);
+    webProfileList.append(profile);
 }
 
 void ExternalAppWindow::startAndPlayPpt(AppConfig &app)
@@ -504,7 +535,8 @@ void ExternalAppWindow::startAndPlayPpt(AppConfig &app)
 
     playPpt(ppt, presentation, slideShowSettings, app);
 
-    QTimer *timer = new QTimer();
+    // 定时器以本对象为父对象，随窗体销毁而停止并释放，避免无父对象造成的内存泄漏
+    QTimer *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, [=]() {
         QAxObject *tmpWins = ppt->querySubObject("SlideShowWindows");
         int winCount = tmpWins->property("Count").toInt();
@@ -602,10 +634,25 @@ void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app)
         }
     }
     qDebug() << "findTabIndex = " << findTabIndex;
+    // 将已登记进程项的 tabName 同步为该 app 实际使用的标签文本（含 show_index 时的序号前缀），
+    // 保证切页时按标签名匹配显示/隐藏的判断成立
+    for (int i = 0; i < externalAppList.size(); i++)
+    {
+        if (externalAppList[i].tabName == app.tabName)
+        {
+            externalAppList[i].tabName = tabTitle;
+        }
+    }
     if (findTabIndex >= 0)
     {
         ui->tabWidget->removeTab(findTabIndex);
         ui->tabWidget->insertTab(findTabIndex, widget, tabTitle);
+        // 同步维护悬浮标签栏，避免 ui->tabWidget 与 tabBar 的标签数量/顺序不一致导致切页索引错位
+        if (findTabIndex < tabBar->count())
+        {
+            tabBar->removeTab(findTabIndex);
+            tabBar->insertTab(findTabIndex, tabTitle);
+        }
     }
     else
     {
@@ -655,24 +702,28 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
 {
     QVector<ProcessInfo> processList;
     ProcessInfo process;
+    // 等待窗口出现的最长时间与探测间隔。原实现上限为 30*100 次、每次 Sleep(200ms)，
+    // 最坏情况下会阻塞主线程约 600 秒，这里将其收敛为约 30 秒
+    const int intervalMs = 200;
+    const int maxWaitCount = 30000 / intervalMs;
     int count = 0;
     bool isFind = false;
     int findCount = 0;
     qDebug() << "starting find process info, app = " << app.appPath;
-    while (count < 30 * 100)
+    while (count < maxWaitCount)
     {
         processList.clear();
         processList = processUtils->getProcessInfo(app.processName, app.windowTitle);
         if (processList.size() == 0)
         {
             count++;
-            Sleep(200);
+            Sleep(intervalMs);
             continue;
         }
         process = processList[processList.size() - 1];
         isFind = true;
         findCount++;
-        Sleep(200);
+        Sleep(intervalMs);
         if (findCount >= 5)
         {
             break;
@@ -699,6 +750,18 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
 ExternalAppWindow::~ExternalAppWindow()
 {
     qDebug() << "MainWindow destructor";
+    // 先释放网页相关的场景与 profile：QGraphicsScene 会级联释放其内部的 QWebEngineView（进而释放 page），
+    // 因此必须先删除场景，再删除 QWebEngineProfile，避免 profile 被提前销毁导致仍在使用的 page/view 崩溃。
+    for (int i = webSceneList.size() - 1; i >= 0; i--)
+    {
+        delete webSceneList[i];
+    }
+    webSceneList.clear();
+    for (int i = webProfileList.size() - 1; i >= 0; i--)
+    {
+        delete webProfileList[i];
+    }
+    webProfileList.clear();
     delete ui;
     for (int i = externalAppList.size() - 1; i >= 0; i--)
     {
