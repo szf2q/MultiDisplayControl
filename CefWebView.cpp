@@ -15,6 +15,9 @@ CefWebView::CefWebView(QWidget *parent) : QWidget(parent)
     //       创建 QCefContext 完成 CEF 初始化，否则此处会导致空指针解引用。
     cefView = new QCefView(QStringLiteral("about:blank"), nullptr, this);
     cefView->setGeometry(rect());
+    // 窗口模式下 CEF 会创建真实原生子窗口，若该原生窗口在本控件尚未显示时就被创建，
+    // 会以独立浮动窗口的形式残留在桌面上；这里先显式隐藏，可见性交由 showEvent/hideEvent 同步。
+    cefView->hide();
 }
 
 CefWebView::~CefWebView()
@@ -30,6 +33,25 @@ void CefWebView::load(const QUrl &url)
     }
     qDebug() << "CefWebView load url = " << url.toString();
     cefView->navigateToUrl(url.toString());
+}
+
+void CefWebView::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    if (cefView != nullptr)
+    {
+        cefView->setGeometry(rect());
+        cefView->show();
+    }
+}
+
+void CefWebView::hideEvent(QHideEvent *event)
+{
+    QWidget::hideEvent(event);
+    if (cefView != nullptr)
+    {
+        cefView->hide();
+    }
 }
 
 void CefWebView::resizeEvent(QResizeEvent *event)

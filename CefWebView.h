@@ -41,6 +41,20 @@ class CefWebView : public QWidget
 
   protected:
     /**
+     * @brief 处理控件显示事件，同步显示内部 CEF 视图
+     * @param event 显示事件
+     * @note 窗口模式下 CEF 使用真实原生子窗口，Qt 的控件可见性不会自动同步到该原生窗口，
+     *       因此必须在这里显式同步，否则非当前标签页的网页会残留在桌面上形成浮动窗口。
+     */
+    void showEvent(QShowEvent *event) override;
+
+    /**
+     * @brief 处理控件隐藏事件，同步隐藏内部 CEF 视图
+     * @param event 隐藏事件
+     */
+    void hideEvent(QHideEvent *event) override;
+
+    /**
      * @brief 处理控件尺寸变化，同步内部 CEF 视图的几何尺寸，保证网页始终铺满整个控件
      * @param event 尺寸变化事件
      */

@@ -315,6 +315,11 @@ int main(int argc, char *argv[])
         cefConfig.setCachePath(QDir::toNativeSeparators(cefCachePath));
         // 关闭 GPU 加速，规避部分机型/驱动下的渲染异常；如现场需要硬件加速请删除该开关
         cefConfig.addCommandLineSwitch("disable-gpu");
+        // 关闭离屏渲染（OSR），改用窗口模式：
+        //   OSR 模式下键盘、鼠标与输入法事件都需要由 Qt 转发给 CEF，实测该链路下网页无法
+        //   获得键盘输入，且在输入法组合（ImeSetComposition）时会导致 libcef 触发断点崩溃；
+        //   窗口模式下由 Chromium 自己创建原生子窗口并直接处理键盘与输入法，输入更可靠。
+        cefConfig.setWindowlessRenderingEnabled(false);
         // 远程调试端口默认关闭，需要调试网页时临时打开即可（注意：开启后本机任意进程可接管页面）
         // cefConfig.setRemoteDebuggingPort(9222);
         QCefContext cefContext(&a, argc, argv, &cefConfig);
