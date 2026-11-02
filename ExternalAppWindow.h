@@ -37,6 +37,8 @@ class QGraphicsScene;
 class QWebEngineProfile;
 #endif
 
+class QTimer;
+
 class ExternalAppWindow : public QMainWindow
 {
     Q_OBJECT
@@ -70,6 +72,15 @@ class ExternalAppWindow : public QMainWindow
     bool eventFilter(QObject *watched, QEvent *event) override;
 
   private:
+    /**
+     * @brief 启动外部窗口尺寸校正定时器（幂等，重复调用只会创建一次）
+     *
+     * 外部程序窗口本身带可缩放边框，用户仍可用鼠标把窗口拖小、露出宿主背景。
+     * 由于跨进程清除 WS_THICKFRAME 会导致目标程序崩溃，这里改为周期检查：
+     * 一旦发现外部窗口尺寸与宿主控件不一致，就立即把它校正回铺满状态。
+     */
+    void startNativeHostFitTimer();
+
     QScreen *defaultScreen = nullptr;
     QScreen *currentScreen = nullptr;
     QList<QScreen *> screenList;
@@ -86,6 +97,8 @@ class ExternalAppWindow : public QMainWindow
      *       用于在宿主控件尺寸变化时同步外部窗口大小。
      */
     QHash<QWidget *, WId> nativeHostWindows;
+    /** @brief 外部窗口尺寸校正定时器，用于抵消鼠标拖动边框造成的尺寸变化 */
+    QTimer *nativeHostFitTimer = nullptr;
 #ifndef USE_QCEFVIEW
     /**
      * @brief 网页视图使用的 QGraphicsScene 列表（仅 QWebEngineView 后端使用）

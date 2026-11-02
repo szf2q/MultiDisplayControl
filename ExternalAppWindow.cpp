@@ -445,14 +445,19 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
     style &= ~WS_CAPTION;
     style &= ~WS_BORDER;
     style &= ~WS_POPUP;
+    // 注意：不要清除目标窗口的 WS_THICKFRAME（可缩放边框）来禁止拖拽调整尺寸。
+    // 实测跨进程修改外部 Qt 程序的窗口样式后，该程序会在 Qt5Gui.dll 中崩溃（0xc0000005）。
+    // 因此这里保持原有样式不变，改由周期定时器把被拖动过的窗口重新校正为铺满宿主控件。
     SetWindowLongPtr(process.hwnd, GWL_STYLE, style);
     SetParent(process.hwnd, (HWND)host->winId());
 
     // 外部窗口先铺满宿主控件，后续尺寸变化由 eventFilter 统一同步
     QRect rect = currentScreen->geometry();
     MoveWindow(process.hwnd, 0, 0, rect.width(), rect.height(), TRUE);
+    // 启动尺寸校正定时器，抵消用户用鼠标拖动窗口边框造成的尺寸变化
     nativeHostWindows.insert(host, (WId)process.hwnd);
     host->installEventFilter(this);
+    startNativeHostFitTimer();
     // 该外部窗口不交给 Qt 管理（externalWindow 保持为空）：
     // 这样 tabIndexChanged/setScreen 中的显隐与几何同步逻辑会跳过它，
     // 显隐完全由 Windows 依据宿主控件的可见性自动处理。
@@ -686,6 +691,40 @@ bool ExternalAppWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
     return QMainWindow::eventFilter(watched, event);
+}
+
+void ExternalAppWindow::startNativeHostFitTimer()
+{
+    if (nativeHostFitTimer != nullptr)
+    {
+        return;
+    }
+    nativeHostFitTimer = new QTimer(this);
+    nativeHostFitTimer->setInterval(200);
+    connect(nativeHostFitTimer, &QTimer::timeout, this, [this]() {
+        for (QHash<QWidget *, WId>::const_iterator it = nativeHostWindows.constBegin();
+             it != nativeHostWindows.constEnd(); ++it)
+        {
+            QWidget *host = it.key();
+            HWND childHwnd = (HWND)it.value();
+            // 窗口句柄可能因外部程序退出而失效，句柄失效后跳过
+            if (host == nullptr || childHwnd == nullptr || IsWindow(childHwnd) == FALSE || !host->isVisible())
+            {
+                continue;
+            }
+            RECT rect;
+            if (GetWindowRect(childHwnd, &rect) == FALSE)
+            {
+                continue;
+            }
+            // 外部窗口被用户拖动边框改变了尺寸，立即校正回铺满宿主控件
+            if (rect.right - rect.left != host->width() || rect.bottom - rect.top != host->height())
+            {
+                MoveWindow(childHwnd, 0, 0, host->width(), host->height(), TRUE);
+            }
+        }
+    });
+    nativeHostFitTimer->start();
 }
 
 void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app)
