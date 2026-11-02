@@ -33,7 +33,8 @@ contains(DEFINES, USE_QCEFVIEW) {
         #      icudtl.dat、*.pak、locales/ 等。
         #      原因：QCefView 内部会 SetDllDirectory("<exe目录>/CefView")，
         #      并把 browser_subprocess_path 指向 "<exe目录>/CefView/CefViewWing.exe"。
-        #   以上文件可在 3rdparty/QCefView/bin 下找到，直接整体拷贝即可。
+        #   以上文件可在 3rdparty/QCefView/bin 下找到；
+        #   可执行 tools/deploy-qcefview-runtime.bat <exe目录> 自动完成上述拷贝。
     } else:unix {
         LIBS += -L$$QCEFVIEW_ROOT/lib -lQCefView
         LIBS += -L$$CEF_ROOT/Release -lcef
