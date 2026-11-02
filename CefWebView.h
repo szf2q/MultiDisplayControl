@@ -1,12 +1,12 @@
 #ifndef CEFWEBVIEW_H
 #define CEFWEBVIEW_H
 
+#include <QUrl>
 #include <QWidget>
 
 #ifdef USE_QCEFVIEW
 
 class QCefView;
-class QUrl;
 
 /**
  * @brief 基于 QCefView（CEF 内核）的网页视图封装类
@@ -24,9 +24,12 @@ class CefWebView : public QWidget
   public:
     /**
      * @brief 构造函数
+     * @param url    初始加载的网页地址，为空时先加载 about:blank 占位
      * @param parent 父窗口，默认为空
+     * @note 直接在构造阶段把真实地址交给 QCefView，可以省掉“先加载 about:blank、再跳转真实地址”
+     *       带来的二次导航，缩短网页首次可见时间。
      */
-    explicit CefWebView(QWidget *parent = nullptr);
+    explicit CefWebView(const QUrl &url = QUrl(), QWidget *parent = nullptr);
 
     /**
      * @brief 析构函数

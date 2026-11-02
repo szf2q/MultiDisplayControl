@@ -7,13 +7,15 @@
 #include <QUrl>
 #include <QCefView.h>
 
-CefWebView::CefWebView(QWidget *parent) : QWidget(parent)
+CefWebView::CefWebView(const QUrl &url, QWidget *parent) : QWidget(parent)
 {
-    // 通过 QCefView 的构造函数直接创建 CEF 视图（当前锁定版本 v1.2.1 无静态工厂方法），
-    // 先以 about:blank 占位，真实地址随后由 load() 通过 navigateToUrl() 指定。
+    // 通过 QCefView 的构造函数直接创建 CEF 视图（当前锁定版本 v1.2.1 无静态工厂方法）。
+    // 若调用方已给出真实地址则直接交给 QCefView，避免先加载 about:blank 再跳转的二次导航；
+    // 未给出地址时仍以 about:blank 占位，真实地址随后由 load() 通过 navigateToUrl() 指定。
     // 说明：QCefView 内部会调用 QCefContext::instance()，因此使用前必须先在 main() 中
     //       创建 QCefContext 完成 CEF 初始化，否则此处会导致空指针解引用。
-    cefView = new QCefView(QStringLiteral("about:blank"), nullptr, this);
+    const QString initialUrl = url.isEmpty() ? QStringLiteral("about:blank") : url.toString();
+    cefView = new QCefView(initialUrl, nullptr, this);
     cefView->setGeometry(rect());
     // 窗口模式下 CEF 会创建真实原生子窗口，若该原生窗口在本控件尚未显示时就被创建，
     // 会以独立浮动窗口的形式残留在桌面上；这里先显式隐藏，可见性交由 showEvent/hideEvent 同步。

@@ -351,17 +351,28 @@ int main(int argc, char *argv[])
             delete utils;
         }
 
+        // 第一轮：创建各屏窗体，并先把每屏的外部程序全部并行拉起（不等待窗口出现），
+        // 使多屏、多程序之间的启动耗时相互重叠，而不是逐屏逐个串行等待
+        QVector<ExternalAppWindow *> createdWindows;
         for (int i = 0; i < qMin(config.count, QGuiApplication::screens().count()); i++)
         {
             qDebug() << "start screen: " << i + 1 << ", app count = " << config.screenList[i].appCount;
             ExternalAppWindow *win = new ExternalAppWindow(config.screenList[i]);
-            win->loadApps(false);
+            win->prestartApps();
             // 使用 QString::number 显式构造十进制字符串键，避免 QString(int) 命中 QChar(int) 重载生成不可见控制字符键
             QString key = QString::number(config.screenList[i].screenIndex);
             GlobalVariants::winList.insert(key, win);
+            createdWindows.append(win);
         }
 
-        Sleep(500);
+        // 第二轮：按屏依次完成网页加载与外部窗口嵌入（外部程序此时大多已就绪，等待时间大幅缩短）
+        for (int i = 0; i < createdWindows.size(); i++)
+        {
+            createdWindows[i]->loadApps(false);
+        }
+        createdWindows.clear();
+
+        Sleep(200);
         QTimer timer;
         GlobalKeyWatcher::watcher.init();
         closeUndesiredWindowTimer(timer);

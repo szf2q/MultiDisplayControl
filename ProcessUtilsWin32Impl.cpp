@@ -1,5 +1,81 @@
 #include "ProcessUtilsWin32Impl.h"
 #include <QMessageBox>
+#include <tlhelp32.h>
+
+namespace
+{
+/**
+ * @brief 通过 Toolhelp32 进程快照枚举指定进程名的所有进程 ID
+ * @param processName 进程可执行文件名（例如 DocumentCount.exe），不区分大小写
+ * @return 匹配到的进程 ID 列表，未找到时为空
+ * @note 原实现每次都用 QProcess 启动 tasklist 并解析文本输出，单次开销数十毫秒且会创建子进程；
+ *       快照方式直接在内存中遍历，单次仅 1 毫秒级。启动阶段该函数会被高频轮询，改造后收益明显。
+ */
+QVector<quint64> enumProcessIdsByName(const QString &processName)
+{
+    QVector<quint64> pidList;
+    if (processName.isEmpty())
+    {
+        return pidList;
+    }
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE)
+    {
+        return pidList;
+    }
+    PROCESSENTRY32W entry;
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry))
+    {
+        do
+        {
+            if (QString::fromWCharArray(entry.szExeFile).compare(processName, Qt::CaseInsensitive) == 0)
+            {
+                pidList.append(entry.th32ProcessID);
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    return pidList;
+}
+
+/** @brief 内核设备名与盘符的映射项，first 为设备名（如 \Device\HarddiskVolume3），second 为盘符（如 C:） */
+typedef QPair<QString, QString> DeviceDrivePair;
+
+/**
+ * @brief 获取“内核设备名 → 盘符”映射表（首次调用时构建并缓存）
+ * @return 映射表
+ * @note getProcessPath 在启动阶段会被每个进程、每次轮询反复调用，原实现每次都要遍历 26 个盘符
+ *       并调用 QueryDosDevice；盘符映射在进程运行期不会变化，因此只构建一次后复用。
+ */
+const QVector<DeviceDrivePair> &getDeviceDriveMap()
+{
+    static QVector<DeviceDrivePair> deviceMap;
+    static bool initialized = false;
+    if (!initialized)
+    {
+        initialized = true;
+        DWORD dwDriveMask = GetLogicalDrives();
+        for (int i = 0; i < 26; i++)
+        {
+            if (!(dwDriveMask & (1 << i)))
+            {
+                continue;
+            }
+            TCHAR szDrive[3] = {0};
+            szDrive[0] = (TCHAR)(TEXT('A') + i);
+            szDrive[1] = TEXT(':');
+            TCHAR szDevice[MAX_PATH] = {0};
+            if (!QueryDosDevice(szDrive, szDevice, MAX_PATH))
+            {
+                continue;
+            }
+            deviceMap.append(qMakePair(QString::fromWCharArray(szDevice), QString::fromWCharArray(szDrive)));
+        }
+    }
+    return deviceMap;
+}
+}  // namespace
 
 int ProcessUtilsWin32::runAsAdministrators()
 {
@@ -142,31 +218,12 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfoByWindowTitle(const QStrin
 }
 QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(const QString &processName)
 {
-    QVector<ProcessInfo> processList = QVector<ProcessInfo>();
-    QProcess process;
-    process.start("tasklist /FI \"IMAGENAME eq " + processName + "\"");
-    process.waitForFinished();
-    QString output = process.readAllStandardOutput();
-    QStringList lines = output.split('\n');
-    for (const QString &line : lines)
+    QVector<ProcessInfo> processList;
+    // 直接按进程名取进程 ID 列表（内存快照），不再启动 tasklist 解析文本
+    const QVector<quint64> pidList = enumProcessIdsByName(processName);
+    for (int i = 0; i < pidList.size(); i++)
     {
-        if (!line.contains(processName.left(25), Qt::CaseInsensitive))
-        {
-            continue;
-        }
-        QStringList parts = line.split(" ", Qt::SkipEmptyParts);
-        if (parts.size() < 2)
-        {
-            continue;
-        }
-        bool ok;
-        quint64 pid = parts[1].toULongLong(&ok);
-        if (ok)
-        {
-            // qDebug() << "pid = " << pid;
-            QVector<ProcessInfo> tmpList = getProcessInfo(pid);
-            processList.append(tmpList);
-        }
+        processList.append(getProcessInfo(pidList[i]));
     }
     return processList;
 }
@@ -261,48 +318,25 @@ QString ProcessUtilsWin32::getProcessPath(quint64 pid)
         return QString();
     }
     CloseHandle(hProcess);
-    QString processPath;
-    TCHAR szDrive[3] = TEXT(" :");
-    TCHAR szDevice[MAX_PATH];
-    TCHAR szDrivePath[MAX_PATH];
-    DWORD dwDriveMask = GetLogicalDrives();
-    for (int i = 0; i < 26; i++)
+    QString processPath = QString::fromWCharArray(path);
+    // 使用缓存的“设备名 → 盘符”映射做前缀替换，避免每次调用都遍历 26 个盘符查询设备名
+    const QVector<DeviceDrivePair> &deviceMap = getDeviceDriveMap();
+    for (int i = 0; i < deviceMap.size(); i++)
     {
-        if (!(dwDriveMask & (1 << i)))
+        const QString &device = deviceMap[i].first;
+        if (device.isEmpty() || !processPath.startsWith(device, Qt::CaseInsensitive))
         {
             continue;
         }
-        szDrive[0] = (TCHAR)(TEXT('A') + i);
-        if (!QueryDosDevice(szDrive, szDevice, MAX_PATH))
-        {
-            continue;
-        }
-        size_t len = _tcslen(szDevice);
-        if (_tcsnicmp(path, szDevice, len) == 0)
-        {
-            _stprintf_s(szDrivePath, MAX_PATH, TEXT("%s%s"), szDrive, path + len);
-            return QString::fromWCharArray(szDrivePath);
-        }
+        return deviceMap[i].second + processPath.mid(device.length());
     }
-    return QString::fromWCharArray(path);
+    return processPath;
 }
 
 bool ProcessUtilsWin32::isProcessExist(const QString &processName)
 {
-    QVector<ProcessInfo> processList = QVector<ProcessInfo>();
-    QProcess process;
-    process.start("tasklist /FI \"IMAGENAME eq " + processName + "\"");
-    process.waitForFinished();
-    QString output = process.readAllStandardOutput();
-    QStringList lines = output.split('\n');
-    for (const QString &line : lines)
-    {
-        if (line.contains(processName.left(25), Qt::CaseInsensitive))
-        {
-            return true;
-        }
-    }
-    return false;
+    // 使用内存快照判断，避免每次探测都启动一次 tasklist 子进程
+    return !enumProcessIdsByName(processName).isEmpty();
 }
 
 bool ProcessUtilsWin32::startProcess(const QString &processPath, const QString &startupArgs, const bool runAsAdmin)
@@ -344,12 +378,18 @@ bool ProcessUtilsWin32::startProcess(const QString &processPath, const QString &
     ProcessInfo processInfo;
     int timeUsed = 0;
     bool startSuccess = false;
+    // 进程存在性检查已改为内存快照，单次开销极低，因此把轮询间隔由 500ms 缩短为 100ms，
+    // 让外部程序一就绪就立即返回，不必固定多等半秒
     while (!startSuccess && timeUsed < 5 * 1000)
     {
         startSuccess = isProcessExist(processName);
         qDebug() << "check process exist, process = " << processName << ", exist = " << startSuccess;
-        timeUsed += 500;
-        Sleep(500);
+        if (startSuccess)
+        {
+            break;
+        }
+        timeUsed += 100;
+        Sleep(100);
     }
     return startSuccess;
 }

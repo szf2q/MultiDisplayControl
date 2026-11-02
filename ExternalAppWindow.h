@@ -12,6 +12,7 @@
 #include <QMainWindow>
 #include <QProcess>
 #include <QScreen>
+#include <QSet>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QWindow>
@@ -56,6 +57,14 @@ class ExternalAppWindow : public QMainWindow
     QScreen *getCurrentScreen();
     void loadApps(bool isReload = false);
     void readLoadApps();
+    /**
+     * @brief 预启动本屏所有外部程序（不等待窗口出现，幂等）
+     *
+     * loadApps() 内部会按配置顺序逐个“启动进程 → 等待窗口出现 → 嵌入标签页”，
+     * 其中等待窗口出现是主要耗时点。先调用本方法把所有外部程序并行拉起，
+     * 后续嵌入时窗口通常已就绪，从而把多个程序的启动耗时重叠起来。
+     */
+    void prestartApps();
 
   protected:
     /**
@@ -99,6 +108,10 @@ class ExternalAppWindow : public QMainWindow
     QHash<QWidget *, WId> nativeHostWindows;
     /** @brief 外部窗口尺寸校正定时器，用于抵消鼠标拖动边框造成的尺寸变化 */
     QTimer *nativeHostFitTimer = nullptr;
+    /** @brief 已通过 prestartApps() 拉起过的外部程序路径，避免重复启动 */
+    QSet<QString> prestartedAppPaths;
+    /** @brief 预启动阶段明确启动失败的外部程序路径，嵌入阶段直接跳过，避免无谓的长时间等待 */
+    QSet<QString> failedAppPaths;
 #ifndef USE_QCEFVIEW
     /**
      * @brief 网页视图使用的 QGraphicsScene 列表（仅 QWebEngineView 后端使用）

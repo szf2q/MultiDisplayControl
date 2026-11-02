@@ -220,6 +220,14 @@ void ExternalAppWindow::loadApps(bool isReload)
     qDebug() << "load apps ...";
     if (!config.debugMode)
     {
+        // 第一阶段：先把本屏所有外部程序并行拉起（不等待窗口出现），
+        // 使多个程序的启动耗时相互重叠，而不是逐个“启动 + 等待 30 秒兜底”串行执行
+        if (!isReload)
+        {
+            prestartApps();
+        }
+        // 第二阶段：仍按配置顺序创建标签，保证标签顺序与配置一致；
+        // 此时外部程序大多已就绪，窗口查找通常一次即可命中
         for (int i = 1; i <= config.appCount; i++)
         {
             if (config.appList[i - 1].appPath.startsWith("http://") ||
@@ -237,13 +245,41 @@ void ExternalAppWindow::loadApps(bool isReload)
             }
         }
     }
-    Sleep(1000);
+    // 所有嵌入均已同步完成，这里只保留极短间隔让 Qt 处理一次布局，不再固定等待 1 秒
+    Sleep(200);
     qDebug() << "ui->tabWidget->count() = " << ui->tabWidget->count();
     if (ui->tabWidget->count() <= 0 && !config.debugMode)
     {
         this->hide();
     }
     this->initTabWidget();
+}
+
+void ExternalAppWindow::prestartApps()
+{
+    if (config.debugMode)
+    {
+        return;
+    }
+    for (int i = 0; i < config.appList.size(); i++)
+    {
+        AppConfig &app = config.appList[i];
+        // 网页与 PPT 由后续流程各自处理，这里只负责普通外部程序
+        if (app.appPath.startsWith("http://") || app.appPath.startsWith("https://") || app.appPath.contains(".ppt"))
+        {
+            continue;
+        }
+        if (prestartedAppPaths.contains(app.appPath))
+        {
+            continue;
+        }
+        prestartedAppPaths.insert(app.appPath);
+        if (!startProcess(app))
+        {
+            qDebug() << "prestart process failed, app path = " << app.appPath;
+            failedAppPaths.insert(app.appPath);
+        }
+    }
 }
 void ExternalAppWindow::initTabWidget()
 {
@@ -359,6 +395,9 @@ void ExternalAppWindow::readLoadApps()
     this->externalAppList.clear();
     // 重新加载会清空标签页并销毁宿主控件，这里同步清空宿主与外部窗口的映射，避免残留失效指针
     nativeHostWindows.clear();
+    // 重新加载不走“启动进程”流程，清空预启动记录，避免沿用上一次的失败标记导致应用被跳过
+    prestartedAppPaths.clear();
+    failedAppPaths.clear();
     ui->tabWidget->clear();
     loadApps(true);
 }
@@ -367,8 +406,15 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
 {
     if (!isReload)
     {
-        // 启动失败时直接返回，避免后续 findProcessInfo 无谓地长时间等待
-        if (!startProcess(app))
+        // 预启动阶段已明确失败的应用直接跳过，避免再白等 30 秒
+        if (failedAppPaths.contains(app.appPath))
+        {
+            qDebug() << "prestart process failed, skip embedding, app path = " << app.appPath;
+            return;
+        }
+        // 未经过 prestartApps() 的应用（例如直接调用 loadApps）在这里保底启动；
+        // 已预启动的应用不再重复启动，避免误杀掉刚拉起的进程
+        if (!prestartedAppPaths.contains(app.appPath) && !startProcess(app))
         {
             qDebug() << "start process failed, app path = " << app.appPath;
             return;
@@ -480,8 +526,8 @@ void ExternalAppWindow::loadWebPageByCef(AppConfig &app)
     qDebug() << "load web page by QCefView, url = " << url;
     // CEF 只支持全进程唯一的缓存目录（已在 main() 中通过 QCefConfig::setCachePath 统一设置），
     // 因此这里不再像 QWebEngineView 那样按应用维度创建独立 profile 做缓存/Cookie 隔离。
-    CefWebView *cefWebView = new CefWebView();
-    cefWebView->load(QUrl(url));
+    // 直接把真实地址交给 CefWebView 构造，避免“about:blank → 真实地址”的二次导航
+    CefWebView *cefWebView = new CefWebView(QUrl(url));
     addWindowToTabWidget(cefWebView, app);
 }
 
@@ -821,9 +867,12 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
     QVector<ProcessInfo> processList;
     ProcessInfo process;
     // 等待窗口出现的最长时间与探测间隔。原实现上限为 30*100 次、每次 Sleep(200ms)，
-    // 最坏情况下会阻塞主线程约 600 秒，这里将其收敛为约 30 秒
+    // 最坏情况下会阻塞主线程约 600 秒，这里将其收敛为约 30 秒。
+    // 由于外部程序已在 prestartApps() 阶段并行拉起，窗口通常已存在，
+    // 连续命中次数由 5 次降为 3 次（约 600ms），用于确认窗口已稳定创建，避免抓到过渡态句柄。
     const int intervalMs = 200;
     const int maxWaitCount = 30000 / intervalMs;
+    const int stableHitCount = 3;
     int count = 0;
     bool isFind = false;
     int findCount = 0;
@@ -842,7 +891,7 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
         isFind = true;
         findCount++;
         Sleep(intervalMs);
-        if (findCount >= 5)
+        if (findCount >= stableHitCount)
         {
             break;
         }
