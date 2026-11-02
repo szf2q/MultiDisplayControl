@@ -9,17 +9,11 @@
 
 CefWebView::CefWebView(QWidget *parent) : QWidget(parent)
 {
-    // 通过 QCefView 的工厂方法创建 CEF 视图，并挂到本控件下由本控件负责生命周期。
-    // 不同版本接口差异说明：
-    //   - QCefView 1.x：静态工厂 QCefView::createQCefView(url, parent, setting) + setUrl()
-    //   - QCefView 2.x/3.x：构造函数可直接创建（QCefView(url, parent)），加载地址接口为 loadUrl()
-    // 若编译报错提示接口不存在，请按实际使用的版本调整下面两处调用。
-    cefView = QCefView::createQCefView(QStringLiteral("about:blank"), this);
-    if (cefView == nullptr)
-    {
-        qWarning() << "CefWebView: create QCefView failed, please check whether QCefContext has been initialized";
-        return;
-    }
+    // 通过 QCefView 的构造函数直接创建 CEF 视图（当前锁定版本 v1.2.1 无静态工厂方法），
+    // 先以 about:blank 占位，真实地址随后由 load() 通过 navigateToUrl() 指定。
+    // 说明：QCefView 内部会调用 QCefContext::instance()，因此使用前必须先在 main() 中
+    //       创建 QCefContext 完成 CEF 初始化，否则此处会导致空指针解引用。
+    cefView = new QCefView(QStringLiteral("about:blank"), nullptr, this);
     cefView->setGeometry(rect());
 }
 
@@ -35,7 +29,7 @@ void CefWebView::load(const QUrl &url)
         return;
     }
     qDebug() << "CefWebView load url = " << url.toString();
-    cefView->setUrl(url.toString());
+    cefView->navigateToUrl(url.toString());
 }
 
 void CefWebView::resizeEvent(QResizeEvent *event)

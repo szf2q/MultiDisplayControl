@@ -21,8 +21,16 @@ contains(DEFINES, USE_QCEFVIEW) {
     win32 {
         LIBS += -L$$QCEFVIEW_ROOT/lib -lQCefView
         LIBS += -L$$CEF_ROOT/Release -llibcef
-        # 运行期须将 libcef.dll、chrome_elf.dll、QCefView.dll、icudtl.dat、locales/、*.pak
-        # 拷贝到 exe 同级目录，否则 CEF 初始化会失败
+        # 运行期部署说明（由 QCefView 的加载方式决定，不能随意摆放）：
+        #   1. QCefView.dll 必须放在 exe 同级目录；
+        #   2. CEF 运行库必须放在 exe 同级的 CefView/ 子目录下，包括
+        #      CefViewWing.exe（渲染子进程宿主）、libcef.dll、chrome_elf.dll、
+        #      libEGL.dll、libGLESv2.dll、d3dcompiler_47.dll、vk_swiftshader.dll、
+        #      vulkan-1.dll、snapshot_blob.bin、v8_context_snapshot.bin、
+        #      icudtl.dat、*.pak、locales/ 等。
+        #      原因：QCefView 内部会 SetDllDirectory("<exe目录>/CefView")，
+        #      并把 browser_subprocess_path 指向 "<exe目录>/CefView/CefViewWing.exe"。
+        #   以上文件可在 3rdparty/QCefView/bin 下找到，直接整体拷贝即可。
     } else:unix {
         LIBS += -L$$QCEFVIEW_ROOT/lib -lQCefView
         LIBS += -L$$CEF_ROOT/Release -lcef

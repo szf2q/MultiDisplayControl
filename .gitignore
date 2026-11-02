@@ -41,6 +41,9 @@ Thumbs.db
 # qtcreator generated files
 *.pro.user*
 
+# 第三方大体积依赖（QCefView 源码 + CEF 二进制），不入库
+/3rdparty/
+
 # xemacs temporary files
 *.flc
 

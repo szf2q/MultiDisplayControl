@@ -1,0 +1,72 @@
+本地补丁：QCefView v1.2.1 适配 Windows 7（CEF 109）
+==================================================
+
+用途
+----
+QCefView v1.2.1 上游默认使用 CEF 126（Chromium 126 已放弃 Windows 7）。
+本项目要求同时兼容 Windows 7 与银河麒麟 V10，故必须把 CEF 内核降到
+最后一个支持 Windows 7 的发行版 109.1.18。
+
+上游 thirdparty/CMakeLists.txt 中 `set(CEF_SDK_VERSION ...)` 是普通 set()，
+会覆盖命令行 -D 传值，因此只能在源码里改，无法通过 cmake -D 指定。
+
+应用方法（在 QCefView 仓库根目录执行）
+--------------------------------------
+    git apply --verbose tools/qcefview-cef109-win7.patch
+
+两处改动
+--------
+1. thirdparty/CMakeLists.txt
+   把生效的 CEF 版本从 126.2.18 改为 109.1.18+gf1c41e4+chromium-109.0.5414.120。
+
+2. CMakeLists.txt
+   在 Windows 分支的 add_compile_options 中追加 /wd4005。
+   原因：该分支 add_definitions 会定义 OS_WINDOWS=1（CefViewCoreProtocol.h 依赖
+   「是否定义」这一事实），而 Windows SDK 的 Shlwapi.h 在 NO_SHLWAPI_ISOS 未定义时
+   又会 #define OS_WINDOWS 0，两者冲突触发警告 C4005；上游开启了 /WX（警告视为错误），
+   导致 src/win/details/QCefContextPrivate_win.cpp 编译失败。
+   OS_WINDOWS 的取值本身无人读取（仅做 defined 判断），故屏蔽该警告是安全的。
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 5162004..cdf4186 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -141,6 +141,12 @@ elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
+   add_compile_options(
+     /W3
+     /WX
++    # 本地定制（MultiDisplayControl）：屏蔽 C4005「宏重定义」。
++    # 原因：本目录 add_definitions 会定义 OS_WINDOWS=1（CefViewCoreProtocol.h 依赖
++    #       「是否定义」这一事实），而 Windows SDK 的 Shlwapi.h 在 NO_SHLWAPI_ISOS 未定义时
++    #       又会 #define OS_WINDOWS 0，两者冲突触发 C4005；在 /WX 下该警告被当作错误导致编译失败。
++    #       该宏取值本身无人读取（仅做 defined 判断），故屏蔽该警告是安全的。
++    /wd4005
+     /M$<IF:$<BOOL:${STATIC_CRT}>,T,D>$<$<CONFIG:Debug>:d>
+   )
+   add_link_options(/DEBUG)
+diff --git a/thirdparty/CMakeLists.txt b/thirdparty/CMakeLists.txt
+index 4c1d802..ca3d8d8 100644
+--- a/thirdparty/CMakeLists.txt
++++ b/thirdparty/CMakeLists.txt
+@@ -35,7 +35,11 @@ FetchContent_Declare(
+ # set(CEF_SDK_VERSION "106.1.1+g5891c70+chromium-106.0.5249.119")   # GOOD
+ # set(CEF_SDK_VERSION "107.1.12+g65b79a6+chromium-107.0.5304.122")  # GOOD
+ # set(CEF_SDK_VERSION "108.4.13+ga98cd4c+chromium-108.0.5359.125")  # GOOD
+-# set(CEF_SDK_VERSION "109.1.18+gf1c41e4+chromium-109.0.5414.120")  # GOOD
++# 本地定制（MultiDisplayControl）：为兼容 Windows 7，CEF 内核必须 <= 109。
++# 109 是 CEF 官方最后一个支持 Windows 7 的发行版，故此处固定为 109.1.18。
++# 注意：原始文件的 set(CEF_SDK_VERSION ...) 为普通 set()，会覆盖命令行 -D 传值，
++#       因此必须在此处直接改值，而不能通过 cmake -D 传入。
++set(CEF_SDK_VERSION "109.1.18+gf1c41e4+chromium-109.0.5414.120")  # GOOD
+ # set(CEF_SDK_VERSION "110.0.32+g291f1df+chromium-110.0.5481.180")  # GOOD
+ # set(CEF_SDK_VERSION "111.2.7+gebf5d6a+chromium-111.0.5563.148")   # GOOD
+ # set(CEF_SDK_VERSION "112.3.0+gb09c4ca+chromium-112.0.5615.165")   # GOOD
+@@ -47,7 +51,7 @@ FetchContent_Declare(
+ # set(CEF_SDK_VERSION "123.0.13+gfc703fb+chromium-123.0.6312.124")  # NOT TEST
+ # set(CEF_SDK_VERSION "124.3.9+g9bd638f+chromium-124.0.6367.207")   # NOT TEST
+ # set(CEF_SDK_VERSION "125.0.22+gc410c95+chromium-125.0.6422.142")  # NOT TEST
+-set(CEF_SDK_VERSION "126.2.18+g3647d39+chromium-126.0.6478.183") # NOT TEST
++# set(CEF_SDK_VERSION "126.2.18+g3647d39+chromium-126.0.6478.183") # 本地禁用：该版本不支持 Windows 7
+ 
+ # set(CEF_SDK_VERSION "127.3.5+g114ea2a+chromium-127.0.6533.120") # GOOD
+ 
