@@ -1,5 +1,6 @@
 #include "ExternalAppWindow.h"
 
+#include <QTimer>
 #include <QUrl>
 
 #include "ui_ExternalAppWindow.h"

@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QMap>
+#include <QNetworkProxyFactory>
 #include <QSharedPointer>
 #include <QTimer>
 #include <QVector>
