@@ -326,8 +326,12 @@ void ExternalAppWindow::tabIndexChanged(int index)
                 //                }
                 //                SetForegroundWindow(externalAppList[i].hwnd);
                 //                externalAppList[i].externalWindow->setFlags(Qt::FramelessWindowHint | Qt::Tool);
+                externalAppList[i].externalWindow->showFullScreen();
             }
-            externalAppList[i].externalWindow->showFullScreen();
+            else
+            {
+                externalAppList[i].externalWindow->showFullScreen();
+            }
         }
         else
         {
@@ -353,6 +357,8 @@ void ExternalAppWindow::tabIndexChanged(int index)
 void ExternalAppWindow::readLoadApps()
 {
     this->externalAppList.clear();
+    // 重新加载会清空标签页并销毁宿主控件，这里同步清空宿主与外部窗口的映射，避免残留失效指针
+    nativeHostWindows.clear();
     ui->tabWidget->clear();
     loadApps(true);
 }
@@ -375,12 +381,14 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
     }
     //获取待嵌入的外部应用窗口
     qDebug() << "process.hwnd = " << process.hwnd << ", wid = " << (WId)process.hwnd;
-    QWindow *externanlWindow = QWindow::fromWinId((WId)process.hwnd);
-    externanlWindow->setFlags(Qt::FramelessWindowHint | Qt::Tool);
-    qDebug() << "externanlWindow = " << externanlWindow << ", wid = " << externanlWindow->winId();
 
     if (process.processName == "chrome.exe")
     {
+        // chrome 的窗口结构特殊，继续沿用 Qt 的 foreign window 方式挂到本窗口下；
+        // 非 chrome 的外部程序不再经过任何 Qt 窗口包装（见下方 Win32 嵌入实现）。
+        QWindow *externanlWindow = QWindow::fromWinId((WId)process.hwnd);
+        externanlWindow->setFlags(Qt::FramelessWindowHint | Qt::Tool);
+        qDebug() << "externanlWindow = " << externanlWindow << ", wid = " << externanlWindow->winId();
         externanlWindow->setParent(this->windowHandle());
         externanlWindow->setGeometry(0, 0, this->geometry().width(), this->geometry().height());
         process.externalWindow = externanlWindow;
@@ -416,22 +424,39 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
         // 窗体所有权已由本对象析构函数统一释放，这里不再注册 aboutToQuit 回收，避免重复释放
         return;
     }
-    //创建嵌入的容器窗口
-    QWidget *container = QWidget::createWindowContainer(externanlWindow, this, Qt::FramelessWindowHint | Qt::Tool);
-    container->setFocusPolicy(Qt::StrongFocus);
+    // 不使用 QWindow::fromWinId + QWidget::createWindowContainer 的方式嵌入：
+    // 实测该方式下被嵌入的 Qt 外部程序（例如 DocumentCount.exe）会在嵌入后数秒内
+    // 于 Qt5Gui.dll 中发生访问违例崩溃（0xc0000005），现象就是该标签页内容消失、
+    // 只剩黑屏，而后面的网页标签页仍可正常显示。
+    // 这里改为纯 Win32 方式嵌入：把外部窗口直接设为标签页内一个原生 QWidget 的子窗口，
+    // 父子关系由 Windows 维护，宿主控件隐藏/移动/销毁时外部窗口自动跟随。
+    QWidget *host = new QWidget(ui->tabWidget);
+    host->setAttribute(Qt::WA_NativeWindow);
+    // 宿主客户区完全被子窗口覆盖，无需再擦除背景，避免父子窗口重复绘制产生闪烁
+    host->setAttribute(Qt::WA_OpaquePaintEvent);
+
+    // 先取消目标窗口的最大化/最小化状态并改为子窗口样式，再建立父子关系，
+    // 避免目标程序仍按“最大化”重新计算几何
+    ShowWindow(process.hwnd, SW_RESTORE);
     LONG_PTR style = GetWindowLongPtr(process.hwnd, GWL_STYLE);
+    style &= ~WS_MAXIMIZE;
+    style &= ~WS_MINIMIZE;
     style |= WS_CHILD;
     style &= ~WS_CAPTION;
     style &= ~WS_BORDER;
     style &= ~WS_POPUP;
     SetWindowLongPtr(process.hwnd, GWL_STYLE, style);
-    //设置外部应用窗口的尺寸到最大
+    SetParent(process.hwnd, (HWND)host->winId());
+
+    // 外部窗口先铺满宿主控件，后续尺寸变化由 eventFilter 统一同步
     QRect rect = currentScreen->geometry();
-    externanlWindow->setGeometry(0, 0, rect.width(), rect.height());
-    addWindowToTabWidget(container, app);
-    // container 已通过 addWindowToTabWidget 挂入 tabWidget，随 ui 一并释放；
-    // 且 createWindowContainer 会接管 externanlWindow 的所有权，随 container 释放。
-    // 因此这里不再注册 aboutToQuit 回收，避免与析构函数重复释放。
+    MoveWindow(process.hwnd, 0, 0, rect.width(), rect.height(), TRUE);
+    nativeHostWindows.insert(host, (WId)process.hwnd);
+    host->installEventFilter(this);
+    // 该外部窗口不交给 Qt 管理（externalWindow 保持为空）：
+    // 这样 tabIndexChanged/setScreen 中的显隐与几何同步逻辑会跳过它，
+    // 显隐完全由 Windows 依据宿主控件的可见性自动处理。
+    addWindowToTabWidget(host, app);
 }
 
 void ExternalAppWindow::loadWebPage(AppConfig &app)
@@ -644,6 +669,23 @@ void ExternalAppWindow::playPpt(QAxWidget *ppt, QAxObject *presentation, QAxObje
     QRect rect = currentScreen->geometry();
     pptWindow->setGeometry(0, 0, rect.width(), rect.height());
     addWindowToTabWidget(container, app);
+}
+
+bool ExternalAppWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    QWidget *host = qobject_cast<QWidget *>(watched);
+    // 仅在宿主控件（承载外部程序窗口的原生控件）尺寸变化或重新显示时同步外部窗口大小
+    if (host != nullptr && nativeHostWindows.contains(host) &&
+        (event->type() == QEvent::Resize || event->type() == QEvent::Show))
+    {
+        HWND childHwnd = (HWND)nativeHostWindows.value(host);
+        // IsWindow 用于防止外部程序在嵌入后自行退出导致句柄失效
+        if (childHwnd != nullptr && IsWindow(childHwnd) != FALSE)
+        {
+            MoveWindow(childHwnd, 0, 0, host->width(), host->height(), TRUE);
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app)

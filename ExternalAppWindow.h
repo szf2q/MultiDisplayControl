@@ -6,6 +6,7 @@
 #include <QDesktopWidget>
 #include <QDockWidget>
 #include <QFileInfo>
+#include <QHash>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMainWindow>
@@ -54,6 +55,20 @@ class ExternalAppWindow : public QMainWindow
     void loadApps(bool isReload = false);
     void readLoadApps();
 
+  protected:
+    /**
+     * @brief 事件过滤器：同步被嵌入的外部程序窗口尺寸
+     *
+     * 外部程序的窗口由纯 Win32 方式嵌入到标签页内的原生宿主控件中，
+     * Qt 并不知道该外部窗口的存在，因此需要在宿主控件尺寸变化（含重新显示）时，
+     * 手动把外部窗口拉伸到宿主客户区大小。
+     *
+     * @param watched 事件来源对象（此处为宿主控件）
+     * @param event   事件对象
+     * @return true 表示事件已被处理并终止派发，false 表示继续按默认流程派发
+     */
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
   private:
     QScreen *defaultScreen = nullptr;
     QScreen *currentScreen = nullptr;
@@ -65,6 +80,12 @@ class ExternalAppWindow : public QMainWindow
     Ui::ExternalAppWindow *ui;
     ProcessUtils *processUtils;
     QVector<ProcessInfo> externalAppList = QVector<ProcessInfo>();
+    /**
+     * @brief 原生宿主控件与外部程序窗口句柄的映射
+     * @note key 为标签页内承载外部窗口的原生 QWidget，value 为被嵌入的外部窗口句柄。
+     *       用于在宿主控件尺寸变化时同步外部窗口大小。
+     */
+    QHash<QWidget *, WId> nativeHostWindows;
 #ifndef USE_QCEFVIEW
     /**
      * @brief 网页视图使用的 QGraphicsScene 列表（仅 QWebEngineView 后端使用）
