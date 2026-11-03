@@ -10,9 +10,9 @@
  * @brief 配置读写入口
  *
  * 统一负责管理界面与展示程序之间的配置持久化：
- *  - config.json：管理界面的唯一数据源；
- *  - config.ini：兼容旧版本展示逻辑的导出文件；
- *  - config.json 不存在时回退读取 config.ini，保证旧部署可直接升级。
+ *  - config.json：唯一的数据源，运行与管理界面都只读写该文件；
+ *  - config.ini：仅为兼容旧部署保留的导入来源，不再写出；
+ *  - config.json 不存在或损坏时尝试从 config.ini 导入，保证旧部署可直接升级。
  *
  * 所有方法均为静态方法，内部不保存任何状态。
  */
@@ -27,14 +27,18 @@ class ConfigStore
     static QString jsonPath(const QString &dir);
 
     /**
-     * @brief 获取 config.ini 的完整路径
+     * @brief 获取旧版 config.ini 的完整路径（仅用于旧配置导入）
      * @param dir 可执行文件所在目录
      * @return 配置文件完整路径
      */
     static QString iniPath(const QString &dir);
 
     /**
-     * @brief 加载配置：优先 config.json，不存在时回退 config.ini
+     * @brief 加载配置：以 config.json 为唯一数据源
+     *
+     * config.json 不存在或损坏时，尝试从旧版 config.ini 导入：
+     * config.json 不存在时导入结果会落盘为新的 config.json，损坏时仅在内存中生效。
+     *
      * @param dir   可执行文件所在目录
      * @param config 输出参数，加载成功时写入完整配置
      * @param error 输出参数，失败原因
@@ -43,7 +47,7 @@ class ConfigStore
     static bool load(const QString &dir, MultiScreenConfig *config, QString *error = nullptr);
 
     /**
-     * @brief 保存配置：备份旧文件后写 config.json，并导出 config.ini
+     * @brief 保存配置：备份旧文件后只写 config.json
      * @param dir    可执行文件所在目录
      * @param config 待保存配置
      * @param error  输出参数，失败原因
@@ -131,15 +135,6 @@ class ConfigStore
      * @return true 表示成功
      */
     static bool writeJson(const QString &filePath, const MultiScreenConfig &config, QString *error);
-
-    /**
-     * @brief 导出兼容旧加载逻辑的 ini
-     * @param filePath 目标文件
-     * @param config   配置
-     * @param error    失败原因
-     * @return true 表示成功
-     */
-    static bool writeIni(const QString &filePath, const MultiScreenConfig &config, QString *error);
 
     /**
      * @brief 备份已存在文件为 <文件名>.bak

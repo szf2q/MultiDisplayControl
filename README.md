@@ -18,9 +18,9 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 
 - **多屏全屏布局**：按屏幕几何位置（或主屏优先）排序，自动把配置中的第 N 号窗口放到第 N 块屏幕上，无边框全屏展示。
 - **可视化管理界面**：`Alt+M` 全屏显示/隐藏管理窗口，支持软件清单管理（桌面程序/网页/PPT，清单内直接显示软件预览缩略图）、屏幕数量与布局管理、拖拽分配软件到屏幕、同屏多软件调整标签顺序；保存后立即热应用，无需重启。新增或编辑软件时可自动运行一次目标程序，抓取第一个界面作为预览图（保存在 `previews/` 目录）并自动填充窗口标题；网页因需要 CEF 渲染进程配合暂不生成预览，回退显示类型图标。
-- **配置双格式**：`config.json` 是唯一数据源，保存时自动备份并导出兼容旧逻辑的 `config.ini`；`config.json` 不存在时自动回退读取 `config.ini`。
+- **配置单文件**：`config.json` 是唯一的数据源，保存时自动备份为 `config.json.bak`；不再写出 `config.ini`，仅在 `config.json` 不存在（旧部署升级）时从旧版 `config.ini` 导入一次并另存为 `config.json`。
 - **屏幕序号标识**：可在每块屏幕右上角浮层显示屏幕编号（`show_index`），标签页标题同时带上屏幕序号，主屏以 `*` 前缀标识。
-- **全局热键切换**：`Alt+数字` 可在屏幕之间"对调"显示内容，`Alt+R` 一键复位到默认屏幕，`Alt+F5` 只重新加载鼠标所在屏幕当前标签页的应用，`Alt+Q` / `Alt+F4` 退出。
+- **全局热键切换**：`Alt+数字` 可在屏幕之间"对调"显示内容，`Alt+R` 一键复位到默认屏幕，`Alt+F5` 只重新加载鼠标所在屏幕当前标签页的应用（不切换标签），`Alt+Tab` / `Alt+Shift+Tab` 循环切换鼠标所在屏幕的标签页，`Alt+Q` / `Alt+F4` 退出。
 - **悬浮标签栏**：屏幕顶部提供独立置顶的 `QTabBar`（可通过 `tab_offset_x` 微调水平位置），点击即可切换当前屏幕显示的应用。
 - **外部窗口嵌入**：通过 Win32 窗口样式改写（`WS_CHILD`，去掉标题栏/边框/弹出属性）+ `QWindow::fromWinId` 实现外部 exe 的嵌入与显隐控制。
 - **管理员权限自提升**：`runas_administrator=true` 时，若当前非管理员，则通过 `ShellExecuteEx(runas)` 重新以管理员身份启动自身并退出原进程（被嵌入的应用需要通过 `startDetached("runas")` 启动）。
@@ -49,7 +49,7 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 MultiDisplayControl/
 ├── MultiDisplayControl.pro      # qmake 工程文件（目标名、模块、输出目录、依赖库）
 ├── main.cpp                     # 程序入口：读配置、启动窗口、注册热键、启动定时任务
-├── ConfigStore.h/.cpp           # 配置读写：config.json 读写、config.ini 导出与旧配置回退
+├── ConfigStore.h/.cpp           # 配置读写：config.json 读写，旧版 config.ini 仅用于导入迁移
 ├── DisplayRuntime.h/.cpp        # 运行时：按配置创建/更新屏幕窗口，保存后增量热更新
 ├── ManagementWindow.h/.cpp      # 管理界面主窗口：两栏全屏布局、保存/重新加载/热应用
 ├── SoftwareLibraryPanel.h/.cpp  # 管理界面-软件清单面板（预览缩略图、新增/编辑/删除/搜索/拖拽源）
@@ -72,7 +72,7 @@ MultiDisplayControl/
 ├── qss/                         # dark.css 主题及配套图标资源
 ├── app.manifest                 # Windows 应用程序清单
 ├── MultiDisplayControl_zh_CN.ts # 中文翻译文件
-├── release/                     # 编译输出目录（含 Qt 运行库、config.ini、cache 等）
+├── release/                     # 编译输出目录（含 Qt 运行库、config.json、cache 等）
 └── debug/                       # 调试编译输出目录（由构建生成）
 ```
 
@@ -81,7 +81,7 @@ MultiDisplayControl/
 ```
                     ┌──────────────────────────────────────────────┐
                     │                 main.cpp                     │
-                    │  读取 config.ini → 构建 MultiScreenConfig     │
+                    │  读取 config.json → 构建 MultiScreenConfig    │
                     │  创建 N 个 ExternalAppWindow                  │
                     │  注册全局热键 + 定时任务                       │
                     └──────────────┬───────────────────────────────┘
@@ -132,18 +132,21 @@ MultiDisplayControl/
 
 ### 6.3 `GlobalKeyWatcher`（[GlobalKeyWatcher.cpp](file:///d:/sunzhenfeng/projects/MultiDisplayControl/GlobalKeyWatcher.cpp)）
 
-单例（静态成员 `GlobalKeyWatcher::watcher`），通过 `RegisterHotKey` 注册全局热键，并安装 `QAbstractNativeEventFilter` 拦截 `WM_HOTKEY` 消息后以信号方式广播：
+单例（静态成员 `GlobalKeyWatcher::watcher`），通过 `RegisterHotKey` 注册全局热键，并安装 `QAbstractNativeEventFilter` 拦截 `WM_HOTKEY` 消息后以信号方式广播；`Alt + Tab` 属于系统保留组合键无法用 `RegisterHotKey` 注册，改用 `WH_KEYBOARD_LL` 低级键盘钩子拦截后转发到主线程：
 
 - `switchScreenKeyPressed(int screenIndex, QString keyMessage)` — `Alt + 1~7` / `Alt + 小键盘 1~7`
 - `altAndRPressed()` — `Alt + R`
-- `altAndF5Pressed()` — `Alt + F5`，重新加载鼠标所在屏幕当前标签页的应用
+- `altAndF5Pressed()` — `Alt + F5`，重新加载鼠标所在屏幕当前标签页的应用（不切换标签）
+- `altTabPressed(bool reverse)` — `Alt + Tab` / `Alt + Shift + Tab`，循环切换鼠标所在屏幕的标签页
 - `quitKeyPressed(QString keyMessage)` — `Alt + Q` / `Alt + F4`
 - `helpKeyPressed()` — `Alt + H`，弹出/关闭快捷键说明浮层（置顶、无边框，点击浮层外部或按 Esc 关闭）
 - `manageKeyPressed()` — `Alt + M`，打开/隐藏多屏控制管理界面
 
 ## 7. 配置文件说明
 
-程序优先读取可执行文件同目录下的 `config.json`（管理界面保存的唯一数据源）；若不存在，则回退读取旧格式 `config.ini`。管理界面保存时会先把已存在的文件备份为 `*.bak`，再写入 `config.json` 并同步导出 `config.ini`（供旧版本程序或人工查看）。
+程序只读取可执行文件同目录下的 `config.json`（管理界面保存的唯一数据源）。管理界面保存时会先把已存在的 `config.json` 备份为 `config.json.bak`，再写入新的 `config.json`，不再生成 `config.ini`。若 `config.json` 不存在（旧部署升级），程序会自动读取同目录下的旧版 `config.ini` 完成一次导入，并把导入结果另存为 `config.json`，此后以 `config.json` 为准。
+
+> `config.ini` 的配置项说明保留在下方，仅用于理解旧配置文件的含义。
 
 ### 7.1 全局配置节 `[screen]`
 
@@ -247,7 +250,7 @@ make            # Windows + MinGW 使用 mingw32-make；MSVC 使用 nmake / jom
 
 1. Qt 运行库（`Qt5Core.dll`、`Qt5Gui.dll`、`Qt5Widgets.dll`、`Qt5Network.dll`、`Qt5WebEngine*`、`QtWebEngineProcess.exe` 及 `platforms/`、`resources/`、`translations/`、`styles/`、`imageformats/`、`iconengines/` 等插件目录，`release/` 目录中已随工程提供）；
 2. 第三方库 `tz.utils.base.dll`（IniConfiguration 实现）；
-3. 配置文件 `config.ini`；
+3. 配置文件 `config.json`（旧部署保留 `config.ini` 时会在首次启动自动导入）；
 4. WebEngine 相关 `d3dcompiler_47.dll`、`libEGL.dll`、`libGLESv2.dll`、`opengl32sw.dll` 等。
 
 ### 9.3 运行
@@ -255,13 +258,13 @@ make            # Windows + MinGW 使用 mingw32-make；MSVC 使用 nmake / jom
 直接运行 `MultiDisplayControl.exe`：
 
 - 需管理员权限时会在启动阶段弹出 UAC 并自动重启自身；
-- 启动后按 `config.ini` 为每块屏幕创建窗口并加载内容，之后进入消息循环等待热键；
+- 启动后按 `config.json` 为每块屏幕创建窗口并加载内容，之后进入消息循环等待热键；
 - 网页缓存与运行日志（`debug.log`）生成在可执行文件目录下。
 
 ## 10. 启动流程
 
 1. 设置 CEF 运行环境（缓存目录 `cefCache` 等），加载 `:/qss/dark.css` 全局深色主题。
-2. `ConfigStore::load()` 读取配置：优先 `config.json`，缺失时回退 `config.ini`，生成 `MultiScreenConfig`。
+2. `ConfigStore::load()` 读取配置：以 `config.json` 为唯一数据源，缺失时从旧版 `config.ini` 导入，生成 `MultiScreenConfig`。
 3. 如需管理员权限且当前非管理员，则提权重启自身。
 4. `DisplayRuntime::start()` 为每块屏幕创建 `ExternalAppWindow`，并行预启动外部程序后按配置顺序加载标签页，并登记到 `GlobalVariants::winList`。
 5. 创建 `ManagementWindow` 管理界面（默认隐藏），把 `Alt+M` 与管理界面显隐、保存后的增量热应用连接起来。

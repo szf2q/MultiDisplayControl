@@ -18,7 +18,7 @@ class SoftwareLibraryPanel;
  *
  * 通过 Alt+M 全屏显示/隐藏，负责：
  *  - 汇总软件清单与屏幕布局两个面板的编辑结果；
- *  - 校验并保存配置（config.json + config.ini）；
+ *  - 校验并保存配置（仅写入 config.json）；
  *  - 向主程序请求增量热应用，并展示应用结果与警告。
  */
 class ManagementWindow : public QWidget

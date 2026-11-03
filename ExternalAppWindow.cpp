@@ -220,6 +220,10 @@ void ExternalAppWindow::loadApps(bool isReload)
     qDebug() << "load apps ...";
     if (!config.debugMode)
     {
+        // 首次批量加载期间抑制标签自动切页：标签按就绪顺序插入，
+        // 先建好的标签会自动成为当前页（表现为启动后闪出第二个应用），
+        // 这里统一在加载结束、顺序全部就位后再切回配置里的第一个应用
+        appsLoading = !isReload;
         // 第一阶段：先把本屏所有外部程序并行拉起（不等待窗口出现），
         // 使多个程序的启动耗时相互重叠，而不是逐个“启动 + 等待 30 秒兜底”串行执行
         if (!isReload)
@@ -308,6 +312,7 @@ void ExternalAppWindow::loadApps(bool isReload)
     Sleep(200);
     // 首次加载时显式切回配置中的第一个应用：网页标签先建、外部程序与 PPT 后建，
     // 按插入位置建标签会让当前页停在后建的那个标签上，这里归位到配置首项
+    appsLoading = false;
     if (!isReload && config.appCount > 0 && ui->tabWidget->count() > 0)
     {
         const int firstTabIndex = findTabIndexByAppId(config.appList[0].id);
@@ -466,10 +471,11 @@ void ExternalAppWindow::reloadCurrentTab()
         qDebug() << "reload current tab, debug mode, skip";
         return;
     }
-    int tabIndex = tabBar->currentIndex();
+    // 以内容区当前页为准：悬浮标签栏只是视图，重载重建标签期间两者的索引可能短暂不同步
+    int tabIndex = ui->tabWidget->currentIndex();
     if (tabIndex < 0)
     {
-        tabIndex = ui->tabWidget->currentIndex();
+        tabIndex = tabBar->currentIndex();
     }
     if (tabIndex < 0 || tabIndex >= ui->tabWidget->count())
     {
@@ -494,13 +500,39 @@ void ExternalAppWindow::reloadCurrentTab()
         {
             continue;
         }
-        // 重载期间标签会被原位重建，重建逻辑保证不改变当前选中项，这里无需再做索引恢复，
-        // 只需按当前标签重新同步一次内容区显隐
+        // 重载期间标签会被原位重建，重建逻辑会按软件 id 恢复当前选中项，
+        // 这里按内容区当前页重新同步一次内容区显隐即可，不再使用标签栏索引
         reloadApp(config.appList[i]);
-        tabIndexChanged(tabBar->currentIndex());
+        tabIndexChanged(ui->tabWidget->currentIndex());
         return;
     }
     qDebug() << "reload current tab failed, no app matched tab = " << tabTitle;
+}
+
+void ExternalAppWindow::switchToNextTab(int step)
+{
+    const int tabCount = ui->tabWidget->count();
+    if (tabCount <= 1 || step == 0)
+    {
+        return;
+    }
+    // 批量加载期间当前页可能为 -1，此时从第一个标签开始循环切换
+    int currentIndex = ui->tabWidget->currentIndex();
+    if (currentIndex < 0)
+    {
+        currentIndex = 0;
+    }
+    // 支持任意步长并按标签总数取模，负值表示向前切换（Alt+Shift+Tab）
+    const int nextIndex = ((currentIndex + step) % tabCount + tabCount) % tabCount;
+    if (nextIndex == ui->tabWidget->currentIndex())
+    {
+        return;
+    }
+    qDebug() << "switch tab by shortcut, from " << currentIndex << " to " << nextIndex;
+    ui->tabWidget->setCurrentIndex(nextIndex);
+    // 内容区与悬浮标签栏保持一致，并按新标签重新同步外部窗口显隐
+    syncFloatingTabBar();
+    tabIndexChanged(nextIndex);
 }
 
 void ExternalAppWindow::reloadApp(AppConfig &app)
@@ -1055,6 +1087,9 @@ void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app, in
     }
     if (findTabIndex >= 0)
     {
+        // 记录替换前的当前软件：移除旧标签时 Qt 可能把当前页切到相邻标签，
+        // 这里在替换完成后按软件 id 复位，保证 Alt+F5 重载当前标签时不会跳页
+        const QString activeAppIdBefore = currentAppId();
         // 先用“插入新标签 → 移除旧标签”的方式原位替换，而不是“移除 → 插入”：
         // 移除当前选中项时 Qt 会自动改选相邻标签并触发切页，导致重载后标签跳变；
         // 先插入时当前项只是索引后移一位，选中状态保持不变
@@ -1071,6 +1106,14 @@ void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app, in
         {
             appTabWidgets.insert(app.id, widget);
         }
+        if (!activeAppIdBefore.isEmpty())
+        {
+            const int restoreIndex = findTabIndexByAppId(activeAppIdBefore);
+            if (restoreIndex >= 0 && restoreIndex != ui->tabWidget->currentIndex())
+            {
+                ui->tabWidget->setCurrentIndex(restoreIndex);
+            }
+        }
     }
     else
     {
@@ -1084,9 +1127,18 @@ void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app, in
         {
             appTabWidgets.insert(app.id, widget);
         }
-        // 只在第一个标签时切换到它；热更新追加标签时保持现场当前页面不变
-        if (ui->tabWidget->count() == 1)
+        if (appsLoading)
         {
+            // 批量加载期间不自动切页：insertTab 会自动选中新建标签，
+            // 先建好的标签会短暂成为当前页（启动后闪出第二个应用），这里立即取消选中
+            if (ui->tabWidget->currentIndex() >= 0)
+            {
+                ui->tabWidget->setCurrentIndex(-1);
+            }
+        }
+        else if (ui->tabWidget->count() == 1)
+        {
+            // 只在第一个标签时切换到它；热更新追加标签时保持现场当前页面不变
             ui->tabWidget->setCurrentIndex(0);
         }
         for (int i = 0; i < config.appList.count(); i++)

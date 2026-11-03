@@ -230,6 +230,42 @@ void reloadCurrentScreenWatcher(GlobalKeyWatcher &watcher, QMap<QString, Externa
     });
 }
 
+/**
+ * @brief 注册 Alt+Tab 快捷键的响应：切换鼠标所在屏幕的标签页
+ * @param watcher 全局热键监听器
+ * @param winList 屏幕序号到窗口对象的映射
+ *
+ * 与 Alt+F5 一致，以鼠标位置确定目标屏幕，只切换该屏幕上的标签页，
+ * 避免多屏场景下影响其它屏幕的展示内容。
+ */
+void switchTabWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
+{
+    QObject::connect(&watcher, &GlobalKeyWatcher::altTabPressed, [&winList](bool reverse) {
+        QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+        if (screen == nullptr)
+        {
+            screen = QGuiApplication::primaryScreen();
+        }
+        if (screen == nullptr)
+        {
+            return;
+        }
+        for (QMap<QString, ExternalAppWindow *>::iterator it = winList.begin(); it != winList.end(); ++it)
+        {
+            ExternalAppWindow *win = it.value();
+            if (win == nullptr || win->isHidden())
+            {
+                continue;
+            }
+            if (win->getCurrentScreen() == screen)
+            {
+                win->switchToNextTab(reverse ? -1 : 1);
+                return;
+            }
+        }
+    });
+}
+
 void closeAppsWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
 {
     QObject::connect(&watcher, &GlobalKeyWatcher::quitKeyPressed, [&winList](const QString &keyMessage) {
@@ -261,7 +297,7 @@ int main(int argc, char *argv[])
 
         setAppStyle();
 
-        // 配置统一由 ConfigStore 读取：优先 config.json，不存在时回退旧版 config.ini
+        // 配置统一由 ConfigStore 读取：只使用 config.json，旧版 config.ini 仅在缺失时用于导入
         MultiScreenConfig config;
         QString configError;
         if (!ConfigStore::load(QApplication::applicationDirPath(), &config, &configError))
@@ -342,6 +378,7 @@ int main(int argc, char *argv[])
         screenSwitchWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         reloadScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         reloadCurrentScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
+        switchTabWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         closeAppsWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         shortcutHelpWatcher(GlobalKeyWatcher::watcher, shortcutHelpDialog);
 

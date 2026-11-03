@@ -63,6 +63,15 @@ class ExternalAppWindow : public QMainWindow
      */
     void reloadCurrentTab();
     /**
+     * @brief 按步长切换当前标签页（循环切换）
+     *
+     * 供 Alt+Tab（step=1）/ Alt+Shift+Tab（step=-1）等快捷键调用：
+     * 同时更新内容区当前页与悬浮标签栏选中项，保证两者始终一致。
+     *
+     * @param step 步长，正值向后切换，负值向前切换
+     */
+    void switchToNextTab(int step = 1);
+    /**
      * @brief 预启动本屏所有外部程序（不等待窗口出现，幂等）
      *
      * loadApps() 内部会按配置顺序逐个“启动进程 → 等待窗口出现 → 嵌入标签页”，
@@ -185,6 +194,14 @@ class ExternalAppWindow : public QMainWindow
     QSet<QString> prestartedAppPaths;
     /** @brief 预启动阶段明确启动失败的外部程序路径，嵌入阶段直接跳过，避免无谓的长时间等待 */
     QSet<QString> failedAppPaths;
+    /**
+     * @brief 是否处于首次批量加载标签页的过程中
+     *
+     * 加载期间标签是按“能多快建好就多快建好”的顺序插入的，先建好的标签会成为当前页，
+     * 表现为启动后先闪出配置里的第二个应用。该标记用于加载期间抑制自动切页，
+     * 统一由 loadApps() 结束时切回配置中的第一个应用。
+     */
+    bool appsLoading = false;
     /** @brief 软件 id 到标签页控件的映射，用于热更新时稳定定位标签 */
     QHash<QString, QWidget *> appTabWidgets;
     /** @brief 软件 id 到 PPT 放映会话的映射，用于热更新时结束放映 */

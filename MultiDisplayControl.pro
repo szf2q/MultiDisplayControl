@@ -184,5 +184,5 @@ RESOURCES += \
     resource.qrc
 
 DISTFILES += \
-    debug/config.ini \
-    release/config.ini
+    debug/config.json \
+    release/config.json

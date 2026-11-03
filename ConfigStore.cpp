@@ -13,44 +13,6 @@
 
 #include "IniConfiguration.h"
 
-namespace
-{
-/**
- * @brief bool 转 ini 文本
- * @param value 布尔值
- * @return "true" 或 "false"
- */
-QString boolText(bool value)
-{
-    return value ? QStringLiteral("true") : QStringLiteral("false");
-}
-
-/**
- * @brief 清理 ini 值中的换行，避免破坏配置结构
- * @param value 原始值
- * @return 单行文本
- */
-QString iniValue(const QString &value)
-{
-    QString result = value;
-    result.replace("\r", " ");
-    result.replace("\n", " ");
-    return result;
-}
-
-/**
- * @brief 生成带序号的键名
- * @param prefix 前缀，例如 app_
- * @param index  序号（从 1 开始）
- * @param suffix 后缀，例如 _path
- * @return 例如 app_1_path
- */
-QString indexedKey(const QString &prefix, int index, const QString &suffix)
-{
-    return QString("%1%2%3").arg(prefix).arg(index).arg(suffix);
-}
-}  // namespace
-
 QString ConfigStore::jsonPath(const QString &dir)
 {
     return QDir(dir).filePath(QStringLiteral("config.json"));
@@ -165,18 +127,52 @@ bool ConfigStore::load(const QString &dir, MultiScreenConfig *config, QString *e
     *config = MultiScreenConfig();
 
     const QString jsonFile = jsonPath(dir);
+    QString jsonError;
     if (QFile::exists(jsonFile))
     {
-        QString jsonError;
         if (loadFromJson(jsonFile, config, &jsonError))
         {
             return true;
         }
-        // JSON 损坏时回退旧 ini，避免程序完全无法启动；不覆盖原 JSON，等待管理界面修复
-        qWarning() << "load config.json failed, fallback to config.ini:" << jsonError;
+        qWarning() << "load config.json failed:" << jsonError;
     }
 
-    return loadFromIni(dir, config, error);
+    // config.json 不存在（旧部署升级）或损坏时，尝试从旧版 config.ini 导入配置：
+    // 导入只在内存中生效，仅当 config.json 不存在时才把结果落盘为新配置；
+    // 损坏的 JSON 保留原样，避免覆盖用户数据后无法人工比对修复。
+    const QString iniFile = iniPath(dir);
+    if (!QFile::exists(iniFile))
+    {
+        if (error != nullptr)
+        {
+            *error = jsonError.isEmpty() ? QStringLiteral("未找到配置文件 %1").arg(jsonFile) : jsonError;
+        }
+        return false;
+    }
+
+    *config = MultiScreenConfig();
+    QString iniError;
+    if (!loadFromIni(dir, config, &iniError))
+    {
+        if (error != nullptr)
+        {
+            *error = jsonError.isEmpty() ? iniError : jsonError + QStringLiteral("；") + iniError;
+        }
+        return false;
+    }
+    if (!QFile::exists(jsonFile))
+    {
+        QString writeError;
+        if (writeJson(jsonFile, *config, &writeError))
+        {
+            qWarning() << "imported config.ini to config.json";
+        }
+        else
+        {
+            qWarning() << "import config.ini failed, write config.json failed:" << writeError;
+        }
+    }
+    return true;
 }
 
 bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *config, QString *error)
@@ -477,91 +473,6 @@ bool ConfigStore::writeJson(const QString &filePath, const MultiScreenConfig &co
     return true;
 }
 
-bool ConfigStore::writeIni(const QString &filePath, const MultiScreenConfig &config, QString *error)
-{
-    QString text;
-    text += QStringLiteral("; 本文件由多屏控制管理界面自动生成，手工修改会在下次保存时被覆盖\n");
-    text += QStringLiteral("; 如需长期维护请修改 config.json 后在管理界面中保存\n");
-    text += QStringLiteral("[screen]\n");
-    text += QStringLiteral("count=%1\n").arg(config.screenList.size());
-    text += QStringLiteral("show_index=%1\n").arg(boolText(config.showIndex));
-    text += QStringLiteral("sort_screen=%1\n").arg(boolText(config.sortScreen));
-    text += QStringLiteral("debug_mode=%1\n").arg(boolText(config.debugMode));
-    text += QStringLiteral("runas_administrator=%1\n").arg(boolText(config.runAsAdministrator));
-
-    for (int i = 0; i < config.screenList.size(); i++)
-    {
-        const ScreenConfig &screen = config.screenList[i];
-        const int screenNumber = i + 1;
-        text += QStringLiteral("\n[screen-%1]\n").arg(screenNumber);
-        text += QStringLiteral("app_count=%1\n").arg(screen.assignments.size());
-        text += QStringLiteral("screen_title=%1\n").arg(iniValue(screen.screenTitle));
-        text += QStringLiteral("tab_offset_x=%1\n").arg(screen.tabOffsetX);
-        // 以下为扩展键，旧版加载逻辑会忽略，新版优先读取 config.json
-        text += QStringLiteral("screen_display=%1\n").arg(iniValue(screen.displayName));
-        text += QStringLiteral("screen_x=%1\n").arg(screen.geometry.x());
-        text += QStringLiteral("screen_y=%1\n").arg(screen.geometry.y());
-        text += QStringLiteral("screen_width=%1\n").arg(screen.geometry.width());
-        text += QStringLiteral("screen_height=%1\n").arg(screen.geometry.height());
-        text += QStringLiteral("screen_primary=%1\n").arg(boolText(screen.primaryScreen));
-
-        int appNumber = 0;
-        for (int j = 0; j < screen.assignments.size(); j++)
-        {
-            const SoftwareItem *software = findSoftware(config, screen.assignments[j].softwareId);
-            if (software == nullptr)
-            {
-                continue;
-            }
-            appNumber++;
-            const QString title = software->windowTitle.isEmpty() ? software->name : software->windowTitle;
-            const QString tabName = screen.assignments[j].tabName.isEmpty() ? software->name
-                                                                           : screen.assignments[j].tabName;
-            text += QStringLiteral("%1=%2\n")
-                        .arg(indexedKey(QStringLiteral("app_"), appNumber, QStringLiteral("_path")))
-                        .arg(iniValue(software->path));
-            text += QStringLiteral("%1=%2\n")
-                        .arg(indexedKey(QStringLiteral("app_"), appNumber, QStringLiteral("_title")))
-                        .arg(iniValue(title));
-            text += QStringLiteral("%1=%2\n")
-                        .arg(indexedKey(QStringLiteral("app_"), appNumber, QStringLiteral("_tab_name")))
-                        .arg(iniValue(tabName));
-            text += QStringLiteral("%1=%2\n")
-                        .arg(indexedKey(QStringLiteral("app_"), appNumber, QStringLiteral("_startup_args")))
-                        .arg(iniValue(software->startupArgs));
-        }
-    }
-
-    QSaveFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly))
-    {
-        if (error != nullptr)
-        {
-            *error = QStringLiteral("无法写入 %1").arg(filePath);
-        }
-        return false;
-    }
-    const QByteArray data = text.toUtf8();
-    if (file.write(data) != data.size())
-    {
-        file.cancelWriting();
-        if (error != nullptr)
-        {
-            *error = QStringLiteral("写入 %1 失败").arg(filePath);
-        }
-        return false;
-    }
-    if (!file.commit())
-    {
-        if (error != nullptr)
-        {
-            *error = QStringLiteral("提交 %1 失败").arg(filePath);
-        }
-        return false;
-    }
-    return true;
-}
-
 bool ConfigStore::backupFile(const QString &filePath)
 {
     if (!QFile::exists(filePath))
@@ -593,24 +504,11 @@ bool ConfigStore::save(const QString &dir, const MultiScreenConfig &config, QStr
     rebuildRuntimeApps(&normalized);
 
     const QString jsonFile = jsonPath(dir);
-    const QString iniFile = iniPath(dir);
     // 备份失败不阻断保存，但会在日志中记录
     if (!backupFile(jsonFile))
     {
         qWarning() << "backup config.json failed";
     }
-    if (!backupFile(iniFile))
-    {
-        qWarning() << "backup config.ini failed";
-    }
 
-    if (!writeJson(jsonFile, normalized, error))
-    {
-        return false;
-    }
-    if (!writeIni(iniFile, normalized, error))
-    {
-        return false;
-    }
-    return true;
+    return writeJson(jsonFile, normalized, error);
 }

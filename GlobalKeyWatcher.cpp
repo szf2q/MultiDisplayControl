@@ -1,4 +1,42 @@
 #include "GlobalKeyWatcher.h"
+
+namespace
+{
+#ifdef Q_OS_WIN
+/** @brief 低级键盘钩子句柄，全局唯一，随进程存活 */
+HHOOK keyboardHook = nullptr;
+
+/**
+ * @brief 低级键盘钩子回调：拦截系统 Alt+Tab / Alt+Shift+Tab
+ *
+ * Alt+Tab 是 Windows 保留的组合键，RegisterHotKey 无法注册，
+ * 因此改用 WH_KEYBOARD_LL 钩子在按键派发到系统之前截获：
+ * 命中后转入主线程切换本程序标签，并返回 1 阻止系统弹出窗口切换界面。
+ *
+ * @param nCode  钩子状态码，小于 0 时必须直接透传
+ * @param wParam 消息类型（WM_KEYDOWN / WM_SYSKEYDOWN 等）
+ * @param lParam 指向 KBDLLHOOKSTRUCT 的指针
+ * @return 1 表示已吞掉该按键，其他情况交给下一个钩子处理
+ */
+LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    if (nCode == HC_ACTION && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
+    {
+        const KBDLLHOOKSTRUCT *keyInfo = reinterpret_cast<const KBDLLHOOKSTRUCT *>(lParam);
+        if (keyInfo != nullptr && keyInfo->vkCode == VK_TAB && (GetAsyncKeyState(VK_MENU) & 0x8000) != 0)
+        {
+            const bool reverse = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+            // 钩子回调处于系统消息路径，界面操作统一排队到主线程执行，避免重入与死锁
+            QMetaObject::invokeMethod(&GlobalKeyWatcher::watcher, "handleAltTab", Qt::QueuedConnection,
+                                      Q_ARG(bool, reverse));
+            return 1;
+        }
+    }
+    return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
+}
+#endif
+}  // namespace
+
 GlobalKeyWatcher GlobalKeyWatcher::watcher;
 
 GlobalKeyWatcher::GlobalKeyWatcher(QObject *parent) : QObject(parent)
@@ -12,7 +50,25 @@ GlobalKeyWatcher::~GlobalKeyWatcher()
 void GlobalKeyWatcher::init()
 {
     registerHotkey();
+#ifdef Q_OS_WIN
+    // Alt+Tab 无法通过 RegisterHotKey 注册，改用低级键盘钩子全局截获；
+    // 钩子随进程存活，进程退出时由系统自动回收，无需显式卸载
+    if (keyboardHook == nullptr)
+    {
+        keyboardHook = SetWindowsHookExW(WH_KEYBOARD_LL, lowLevelKeyboardProc, GetModuleHandleW(nullptr), 0);
+        if (keyboardHook == nullptr)
+        {
+            qWarning() << "install low level keyboard hook failed, error = " << GetLastError();
+        }
+    }
+#endif
     qApp->installNativeEventFilter(this);
+}
+
+void GlobalKeyWatcher::handleAltTab(bool reverse)
+{
+    qDebug() << "组合键Alt+Tab触发, reverse = " << reverse;
+    emit altTabPressed(reverse);
 }
 void GlobalKeyWatcher::registerHotkey()
 {
