@@ -44,10 +44,10 @@ const char *const kKeyStyle =
     "color:#8FE3FF;"
     "background:rgba(47,134,222,0.20);"
     "border:1px solid rgba(96,186,255,0.38);"
-    "border-radius:6px;"
-    "padding:6px 10px;"
+    "border-radius:12px;"
+    "padding:12px 20px;"
     "font-family:Consolas,'Microsoft YaHei';"
-    "font-size:14px;"
+    "font-size:28px;"
     "font-weight:bold;"
     "}";
 
@@ -58,7 +58,7 @@ const char *const kDescStyle =
     "background:transparent;"
     "border:none;"
     "font-family:'Microsoft YaHei';"
-    "font-size:14px;"
+    "font-size:28px;"
     "}";
 }  // namespace
 
@@ -102,7 +102,8 @@ void ShortcutHelpDialog::buildUi()
     // 卡片本身承担深蓝渐变背景与圆角，不绘制任何边框
     card = new QFrame(this);
     card->setObjectName(QStringLiteral("helpCard"));
-    card->setMinimumWidth(700);
+    // 字体放大后需要更大的最小宽度，避免说明文字被折行
+    card->setMinimumWidth(1300);
     card->setStyleSheet(QStringLiteral("#helpCard{"
                                        "background:qlineargradient(x1:0,y1:0,x2:1,y2:1,"
                                        "stop:0 #12365F,stop:0.45 #0B2444,stop:1 #061428);"
@@ -117,24 +118,24 @@ void ShortcutHelpDialog::buildUi()
     card->setGraphicsEffect(shadow);
 
     QVBoxLayout *cardLayout = new QVBoxLayout(card);
-    cardLayout->setContentsMargins(30, 22, 30, 16);
-    cardLayout->setSpacing(14);
+    cardLayout->setContentsMargins(44, 32, 44, 24);
+    cardLayout->setSpacing(22);
 
     // ---------- 标题行：左侧青色渐变竖条 + 标题 ----------
     QHBoxLayout *titleLayout = new QHBoxLayout();
-    titleLayout->setSpacing(12);
+    titleLayout->setSpacing(18);
 
     QFrame *accent = new QFrame(card);
-    accent->setFixedSize(4, 22);
+    accent->setFixedSize(7, 40);
     accent->setStyleSheet(QStringLiteral("background:qlineargradient(x1:0,y1:0,x2:0,y2:1,"
                                          "stop:0 #5BE1FF,stop:1 #1E7BE0);"
-                                         "border:none;border-radius:2px;"));
+                                         "border:none;border-radius:3px;"));
     titleLayout->addWidget(accent);
 
     QLabel *titleLabel = new QLabel(textUtf8("快捷键说明"), card);
     titleLabel->setStyleSheet(QStringLiteral("QLabel{color:#EAF5FF;background:transparent;"
-                                             "border:none;font-family:'%1';font-size:19px;"
-                                             "font-weight:bold;letter-spacing:2px;}")
+                                             "border:none;font-family:'%1';font-size:38px;"
+                                             "font-weight:bold;letter-spacing:4px;}")
                                   .arg(QString::fromUtf8(kFontFamily)));
     titleLayout->addWidget(titleLabel);
     titleLayout->addStretch();
@@ -149,9 +150,9 @@ void ShortcutHelpDialog::buildUi()
 
     // ---------- 快捷键列表 ----------
     QGridLayout *grid = new QGridLayout();
-    grid->setHorizontalSpacing(22);
-    grid->setVerticalSpacing(12);
-    grid->setColumnMinimumWidth(0, 210);
+    grid->setHorizontalSpacing(40);
+    grid->setVerticalSpacing(20);
+    grid->setColumnMinimumWidth(0, 380);
     grid->setColumnStretch(1, 1);
 
     addShortcutRow(grid, 0, QStringLiteral("Alt + H"),
@@ -170,7 +171,7 @@ void ShortcutHelpDialog::buildUi()
     QLabel *hintLabel = new QLabel(
         textUtf8("点击弹框外部区域或按 Esc 关闭，快捷键为全局生效，无需先激活窗口"), card);
     hintLabel->setStyleSheet(QStringLiteral("QLabel{color:#6E93B8;background:transparent;border:none;"
-                                            "font-family:'%1';font-size:11px;}")
+                                            "font-family:'%1';font-size:22px;}")
                                  .arg(QString::fromUtf8(kFontFamily)));
     hintLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     cardLayout->addWidget(hintLabel);
