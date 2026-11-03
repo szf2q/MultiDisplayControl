@@ -159,9 +159,15 @@ class SoftwareLibraryPanel : public QWidget
     /**
      * @brief 为软件条目生成列表图标
      * @param software 软件条目
-     * @return 图标
+     * @return 预览缩略图；无预览图时回退类型图标
      */
     QIcon iconForSoftware(const SoftwareItem &software) const;
+
+    /**
+     * @brief 启动软件一次并抓取预览图，成功时写入 software->previewPath
+     * @param software 软件条目（id 必须已生成）
+     */
+    void generatePreview(SoftwareItem *software);
 
     /**
      * @brief 判断软件是否已被任意屏幕引用

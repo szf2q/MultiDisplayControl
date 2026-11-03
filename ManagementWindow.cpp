@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
+#include <QCursor>
 #include <QFile>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -18,7 +19,6 @@
 #include "ConfigStore.h"
 #include "ScreenLayoutCanvas.h"
 #include "SoftwareLibraryPanel.h"
-#include "SoftwarePreviewPanel.h"
 
 ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
 {
@@ -27,7 +27,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     // 无边框窗口：去掉系统标题栏与阴影边框，由窗口内部的标题区承担拖动与关闭职责
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     resize(1500, 950);
-    setMinimumSize(1200, 800);
+    setMinimumSize(1024, 700);
 
     // 只对管理窗口自身应用样式，避免影响全屏展示窗口
     QFile styleFile(QStringLiteral(":/qss/manager.css"));
@@ -79,7 +79,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     settingLayout->addWidget(runAsAdminCheck);
     settingLayout->addStretch(1);
 
-    // ==================== 三栏内容 ====================
+    // ==================== 两栏内容（软件清单 | 屏幕布局） ====================
     libraryPanel = new SoftwareLibraryPanel(this);
     QWidget *libraryGroup = new QWidget(this);
     libraryGroup->setObjectName(QStringLiteral("panelGroup"));
@@ -100,24 +100,12 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     canvasLayout->addWidget(canvasTitle);
     canvasLayout->addWidget(layoutCanvas, 1);
 
-    previewPanel = new SoftwarePreviewPanel(this);
-    QWidget *previewGroup = new QWidget(this);
-    previewGroup->setObjectName(QStringLiteral("panelGroup"));
-    QVBoxLayout *previewLayout = new QVBoxLayout(previewGroup);
-    previewLayout->setContentsMargins(10, 10, 10, 10);
-    QLabel *previewTitle = new QLabel(QStringLiteral("预览"), previewGroup);
-    previewTitle->setObjectName(QStringLiteral("groupTitle"));
-    previewLayout->addWidget(previewTitle);
-    previewLayout->addWidget(previewPanel, 1);
-
     QSplitter *splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(libraryGroup);
     splitter->addWidget(canvasGroup);
-    splitter->addWidget(previewGroup);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
-    splitter->setStretchFactor(2, 0);
-    splitter->setSizes(QList<int>() << 340 << 760 << 380);
+    splitter->setSizes(QList<int>() << 420 << 1180);
     splitter->setChildrenCollapsible(false);
 
     // ==================== 状态栏 ====================
@@ -141,19 +129,13 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     connect(debugModeCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
     connect(runAsAdminCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
 
-    connect(libraryPanel, &SoftwareLibraryPanel::selectionChanged, this,
-            [this](const QString &softwareId) { onSoftwareSelected(softwareId); });
     connect(libraryPanel, &SoftwareLibraryPanel::configChanged, this, [this]() {
         if (layoutCanvas != nullptr)
         {
             layoutCanvas->refresh();
         }
-        // 软件被改名或删除后，预览面板需要跟随刷新
-        refreshPreview();
         markDirty();
     });
-    connect(layoutCanvas, &ScreenLayoutCanvas::screenSelected, this,
-            [this](int row) { onScreenSelected(row); });
     connect(layoutCanvas, &ScreenLayoutCanvas::configChanged, this, [this]() { markDirty(); });
     connect(layoutCanvas, &ScreenLayoutCanvas::softwareDropped, this,
             [this](int screenRow, const QString &softwareId, int insertRow) {
@@ -188,10 +170,6 @@ void ManagementWindow::setConfig(const MultiScreenConfig &config)
 
     libraryPanel->setConfig(&m_config);
     layoutCanvas->setConfig(&m_config);
-    if (m_config.screenList.isEmpty())
-    {
-        previewPanel->showScreen(nullptr, nullptr);
-    }
     clearDirty();
 }
 
@@ -207,11 +185,21 @@ void ManagementWindow::toggle()
 
 void ManagementWindow::showManager()
 {
+    // 管理界面固定全屏显示（无边框、置顶），并落在鼠标所在的屏幕上，便于多屏环境下就地管理
+    QScreen *targetScreen = QGuiApplication::screenAt(QCursor::pos());
+    if (targetScreen == nullptr)
+    {
+        targetScreen = QGuiApplication::primaryScreen();
+    }
+    if (targetScreen != nullptr)
+    {
+        setGeometry(targetScreen->geometry());
+    }
     if (isMinimized())
     {
         showNormal();
     }
-    show();
+    showFullScreen();
     raise();
     activateWindow();
 }
@@ -249,6 +237,12 @@ void ManagementWindow::closeEvent(QCloseEvent *event)
 
 void ManagementWindow::mousePressEvent(QMouseEvent *event)
 {
+    // 全屏状态下窗口位置由系统接管，不再响应拖动
+    if (isFullScreen())
+    {
+        QWidget::mousePressEvent(event);
+        return;
+    }
     // 无边框窗口没有系统标题栏，按住窗口空白处（标题、说明文字等）即可拖动
     if (event->button() == Qt::LeftButton)
     {
@@ -334,26 +328,6 @@ void ManagementWindow::onReload()
     setStatusMessage(QStringLiteral("已重新加载配置"));
 }
 
-void ManagementWindow::onSoftwareSelected(const QString &softwareId)
-{
-    previewPanel->showSoftware(findSoftware(softwareId));
-    const int row = layoutCanvas->selectedRow();
-    if (row >= 0 && row < m_config.screenList.size())
-    {
-        previewPanel->showScreen(&m_config.screenList[row], &m_config.softwareList);
-    }
-}
-
-void ManagementWindow::onScreenSelected(int row)
-{
-    if (row < 0 || row >= m_config.screenList.size())
-    {
-        previewPanel->showScreen(nullptr, nullptr);
-        return;
-    }
-    previewPanel->showScreen(&m_config.screenList[row], &m_config.softwareList);
-}
-
 void ManagementWindow::onSoftwareDropped(int screenRow, const QString &softwareId, int insertRow)
 {
     if (screenRow < 0 || screenRow >= m_config.screenList.size())
@@ -412,7 +386,6 @@ void ManagementWindow::onSoftwareDropped(int screenRow, const QString &softwareI
 
     layoutCanvas->refresh();
     markDirty();
-    onScreenSelected(screenRow);
 
     if (movedFromRow >= 0)
     {
@@ -458,11 +431,6 @@ void ManagementWindow::clearDirty()
     {
         dirtyLabel->setVisible(false);
     }
-}
-
-void ManagementWindow::refreshPreview()
-{
-    onSoftwareSelected(libraryPanel->currentSoftwareId());
 }
 
 bool ManagementWindow::validate(QString *error) const

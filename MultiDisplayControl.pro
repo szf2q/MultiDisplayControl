@@ -79,8 +79,8 @@ SOURCES += \
     ManagementWindow.cpp \
     ProcessUtilsWin32Impl.cpp \
     ScreenLayoutCanvas.cpp \
+    SoftwareCapture.cpp \
     SoftwareLibraryPanel.cpp \
-    SoftwarePreviewPanel.cpp \
     main.cpp
 
 HEADERS += \
@@ -98,8 +98,8 @@ HEADERS += \
     ProcessUtilsWin32Impl.h \
     ScreenConfig.h \
     ScreenLayoutCanvas.h \
-    SoftwareLibraryPanel.h \
-    SoftwarePreviewPanel.h
+    SoftwareCapture.h \
+    SoftwareLibraryPanel.h
 
 FORMS += \
     ExternalAppWindow.ui

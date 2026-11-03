@@ -222,6 +222,7 @@ bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *confi
         item.windowTitle = object.value(QStringLiteral("windowTitle")).toString();
         item.startupArgs = object.value(QStringLiteral("startupArgs")).toString();
         item.remark = object.value(QStringLiteral("remark")).toString();
+        item.previewPath = object.value(QStringLiteral("previewPath")).toString();
         if (item.path.isEmpty())
         {
             continue;
@@ -387,6 +388,7 @@ QJsonObject ConfigStore::softwareToJson(const SoftwareItem &item)
     object.insert(QStringLiteral("windowTitle"), item.windowTitle);
     object.insert(QStringLiteral("startupArgs"), item.startupArgs);
     object.insert(QStringLiteral("remark"), item.remark);
+    object.insert(QStringLiteral("previewPath"), item.previewPath);
     return object;
 }
 

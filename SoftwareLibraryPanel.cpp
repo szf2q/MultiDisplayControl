@@ -1,5 +1,6 @@
 #include "SoftwareLibraryPanel.h"
 
+#include <QApplication>
 #include <QComboBox>
 #include <QDebug>
 #include <QDrag>
@@ -19,6 +20,7 @@
 #include <QVBoxLayout>
 
 #include "ConfigStore.h"
+#include "SoftwareCapture.h"
 
 namespace
 {
@@ -273,7 +275,8 @@ SoftwareLibraryPanel::SoftwareLibraryPanel(QWidget *parent) : QWidget(parent)
     filterLayout->addWidget(typeCombo);
 
     listWidget = new SoftwareListWidget(this);
-    listWidget->setIconSize(QSize(32, 32));
+    // 列表项左侧直接展示软件预览缩略图，尺寸按 16:9 预留
+    listWidget->setIconSize(QSize(128, 72));
     listWidget->setDragEnabled(true);
     listWidget->setDragDropMode(QAbstractItemView::DragOnly);
     listWidget->setDefaultDropAction(Qt::CopyAction);
@@ -338,13 +341,11 @@ void SoftwareLibraryPanel::refresh()
             }
             QListWidgetItem *item = new QListWidgetItem(listWidget);
             item->setIcon(iconForSoftware(software));
-            item->setText(QString("%1\n%2 · %3")
-                              .arg(software.name)
-                              .arg(typeDisplayName(software.type))
-                              .arg(software.path));
+            item->setText(QString("%1\n%2").arg(software.name).arg(typeDisplayName(software.type)));
             item->setToolTip(software.path);
             item->setData(Qt::UserRole, software.id);
-            item->setSizeHint(QSize(0, 56));
+            // 与 128x72 缩略图匹配的列表项高度，留出上下内边距
+            item->setSizeHint(QSize(0, 84));
         }
     }
     listWidget->blockSignals(false);
@@ -405,6 +406,8 @@ void SoftwareLibraryPanel::onAdd()
     }
     software = dialog.result();
     software.id = ConfigStore::makeSoftwareId();
+    // 新增软件时自动运行一次并抓取第一个界面作为预览图，失败则回退类型图标
+    generatePreview(&software);
     m_config->softwareList.append(software);
     refresh();
     selectSoftware(software.id);
@@ -423,6 +426,8 @@ void SoftwareLibraryPanel::onEdit()
         return;
     }
     const QString softwareId = software->id;
+    const QString oldPath = software->path;
+    const QString oldType = software->type;
     SoftwareEditDialog dialog(*software, m_config->softwareList, this);
     if (dialog.exec() != QDialog::Accepted)
     {
@@ -430,6 +435,13 @@ void SoftwareLibraryPanel::onEdit()
     }
     *software = dialog.result();
     software->id = softwareId;
+    if (software->path != oldPath || software->type != oldType)
+    {
+        // 目标程序变化后旧预览图已失效，先清理再重新抓取
+        SoftwareCapture::removePreview(QApplication::applicationDirPath(), softwareId);
+        software->previewPath.clear();
+        generatePreview(software);
+    }
     refresh();
     selectSoftware(softwareId);
     emit configChanged();
@@ -477,6 +489,8 @@ void SoftwareLibraryPanel::onRemove()
             m_config->softwareList.removeAt(i);
         }
     }
+    // 软件删除后其预览图不再被引用，一并清理
+    SoftwareCapture::removePreview(QApplication::applicationDirPath(), softwareId);
     refresh();
     emit configChanged();
 }
@@ -492,6 +506,17 @@ void SoftwareLibraryPanel::onItemDoubleClicked(QListWidgetItem *item)
 
 QIcon SoftwareLibraryPanel::iconForSoftware(const SoftwareItem &software) const
 {
+    const QString previewFile = SoftwareCapture::resolveExistingPreview(QApplication::applicationDirPath(), software);
+    if (!previewFile.isEmpty())
+    {
+        QPixmap preview(previewFile);
+        if (!preview.isNull())
+        {
+            // 预览图按列表图标区域等比缩放，避免拉伸变形
+            preview = preview.scaled(QSize(128, 72), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            return QIcon(preview);
+        }
+    }
     if (software.type == "web")
     {
         return style()->standardIcon(QStyle::SP_DriveNetIcon);
@@ -507,6 +532,23 @@ QIcon SoftwareLibraryPanel::iconForSoftware(const SoftwareItem &software) const
         return provider.icon(fileInfo);
     }
     return style()->standardIcon(QStyle::SP_ComputerIcon);
+}
+
+void SoftwareLibraryPanel::generatePreview(SoftwareItem *software)
+{
+    if (software == nullptr || software->id.isEmpty())
+    {
+        return;
+    }
+    const QString appDir = QApplication::applicationDirPath();
+    if (SoftwareCapture::capturePreview(*software, appDir, this))
+    {
+        software->previewPath = SoftwareCapture::relativePreviewPath(software->id);
+    }
+    else
+    {
+        software->previewPath.clear();
+    }
 }
 
 bool SoftwareLibraryPanel::isReferenced(const QString &softwareId) const

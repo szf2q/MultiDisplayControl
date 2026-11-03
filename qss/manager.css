@@ -47,18 +47,6 @@ QLabel#statusLabel[warning="true"] {
     color: #ffb648;
 }
 
-QLabel#previewTitle {
-    color: #ffffff;
-    font-size: 20px;
-    font-weight: bold;
-}
-
-QLabel#previewIcon {
-    background: #0e2440;
-    border: 1px solid #26507d;
-    border-radius: 10px;
-}
-
 QLabel#screenIndexBadge {
     background: #11c0fe;
     color: #05203a;

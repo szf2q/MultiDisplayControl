@@ -34,6 +34,13 @@ struct SoftwareItem
     QString startupArgs;
     /** 备注说明，仅用于管理界面展示 */
     QString remark;
+    /**
+     * @brief 预览图相对路径，例如 previews/sw-xxxxxxxx.png
+     *
+     * 相对可执行文件所在目录保存，便于整体拷贝部署；
+     * 为空表示尚未生成预览图，管理界面回退显示类型图标。
+     */
+    QString previewPath;
 };
 
 /**

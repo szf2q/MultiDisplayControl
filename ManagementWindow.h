@@ -12,13 +12,12 @@ class QLabel;
 class QPushButton;
 class ScreenLayoutCanvas;
 class SoftwareLibraryPanel;
-class SoftwarePreviewPanel;
 
 /**
  * @brief 多屏控制管理主窗口
  *
- * 通过 Alt+M 显示/隐藏，负责：
- *  - 汇总软件清单、屏幕布局、预览三个面板的编辑结果；
+ * 通过 Alt+M 全屏显示/隐藏，负责：
+ *  - 汇总软件清单与屏幕布局两个面板的编辑结果；
  *  - 校验并保存配置（config.json + config.ini）；
  *  - 向主程序请求增量热应用，并展示应用结果与警告。
  */
@@ -45,7 +44,7 @@ class ManagementWindow : public QWidget
     void toggle();
 
     /**
-     * @brief 显示管理窗口并置顶
+     * @brief 全屏显示管理窗口并置顶
      */
     void showManager();
 
@@ -106,18 +105,6 @@ class ManagementWindow : public QWidget
     void onReload();
 
     /**
-     * @brief 软件清单选中项变化
-     * @param softwareId 软件 id
-     */
-    void onSoftwareSelected(const QString &softwareId);
-
-    /**
-     * @brief 屏幕选中项变化
-     * @param row 屏幕行号
-     */
-    void onScreenSelected(int row);
-
-    /**
      * @brief 从软件清单拖入软件到指定屏幕
      * @param screenRow  屏幕行号
      * @param softwareId 软件 id
@@ -140,11 +127,6 @@ class ManagementWindow : public QWidget
      * @brief 清除未保存标记
      */
     void clearDirty();
-
-    /**
-     * @brief 刷新预览面板的选中内容
-     */
-    void refreshPreview();
 
     /**
      * @brief 校验配置是否可以保存
@@ -188,7 +170,6 @@ class ManagementWindow : public QWidget
 
     SoftwareLibraryPanel *libraryPanel = nullptr;
     ScreenLayoutCanvas *layoutCanvas = nullptr;
-    SoftwarePreviewPanel *previewPanel = nullptr;
 };
 
 #endif  // MANAGEMENTWINDOW_H

@@ -17,7 +17,7 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 ## 2. 功能特性
 
 - **多屏全屏布局**：按屏幕几何位置（或主屏优先）排序，自动把配置中的第 N 号窗口放到第 N 块屏幕上，无边框全屏展示。
-- **可视化管理界面**：`Alt+M` 打开/隐藏管理窗口，支持软件清单管理（桌面程序/网页/PPT，可预览）、屏幕数量与布局管理、拖拽分配软件到屏幕、同屏多软件调整标签顺序；保存后立即热应用，无需重启。
+- **可视化管理界面**：`Alt+M` 全屏显示/隐藏管理窗口，支持软件清单管理（桌面程序/网页/PPT，清单内直接显示软件预览缩略图）、屏幕数量与布局管理、拖拽分配软件到屏幕、同屏多软件调整标签顺序；保存后立即热应用，无需重启。新增软件时会自动运行一次并抓取第一个界面生成预览图（保存在 `previews/` 目录），网页因需要 CEF 渲染进程配合暂不生成预览，回退显示类型图标。
 - **配置双格式**：`config.json` 是唯一数据源，保存时自动备份并导出兼容旧逻辑的 `config.ini`；`config.json` 不存在时自动回退读取 `config.ini`。
 - **屏幕序号标识**：可在每块屏幕右上角浮层显示屏幕编号（`show_index`），标签页标题同时带上屏幕序号，主屏以 `*` 前缀标识。
 - **全局热键切换**：`Alt+数字` 可在屏幕之间"对调"显示内容，`Alt+R` 一键复位到默认屏幕，`Alt+F5` 只重新加载鼠标所在屏幕当前标签页的应用，`Alt+Q` / `Alt+F4` 退出。
@@ -51,10 +51,10 @@ MultiDisplayControl/
 ├── main.cpp                     # 程序入口：读配置、启动窗口、注册热键、启动定时任务
 ├── ConfigStore.h/.cpp           # 配置读写：config.json 读写、config.ini 导出与旧配置回退
 ├── DisplayRuntime.h/.cpp        # 运行时：按配置创建/更新屏幕窗口，保存后增量热更新
-├── ManagementWindow.h/.cpp      # 管理界面主窗口：三栏布局、保存/重新加载/热应用
-├── SoftwareLibraryPanel.h/.cpp  # 管理界面-软件清单面板（新增/编辑/删除/搜索/拖拽源）
+├── ManagementWindow.h/.cpp      # 管理界面主窗口：两栏全屏布局、保存/重新加载/热应用
+├── SoftwareLibraryPanel.h/.cpp  # 管理界面-软件清单面板（预览缩略图、新增/编辑/删除/搜索/拖拽源）
+├── SoftwareCapture.h/.cpp       # 管理界面-软件预览图采集（启动一次程序并抓取首个窗口）
 ├── ScreenLayoutCanvas.h/.cpp    # 管理界面-屏幕布局画布（屏幕卡片、拖拽分配、标签排序）
-├── SoftwarePreviewPanel.h/.cpp  # 管理界面-预览面板（分层预览 + 网页实时预览）
 ├── ExternalAppWindow.h/.cpp     # 核心窗口类：单屏全屏窗口 + 标签页容器 + 应用/网页/PPT 加载
 ├── ExternalAppWindow.ui         # 窗口界面（centralwidget + QTabWidget）
 ├── ScreenConfig.h               # 配置数据结构：AppConfig / ScreenConfig / MultiScreenConfig
