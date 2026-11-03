@@ -301,6 +301,11 @@ class ScreenLayoutCanvas : public QWidget
      */
     int selectedRow() const;
 
+    /**
+     * @brief 添加一块屏幕（供管理界面顶部按钮调用）
+     */
+    void addScreen();
+
   signals:
     /**
      * @brief 屏幕配置发生变化（名称、顺序、分配、偏移、增删）
@@ -382,7 +387,6 @@ class ScreenLayoutCanvas : public QWidget
     PhysicalScreenMap *screenMap = nullptr;
     QScrollArea *cardScroll = nullptr;
     QWidget *cardContainer = nullptr;
-    QPushButton *addButton = nullptr;
     QList<ScreenCard *> m_cards;
     int m_selectedRow = -1;
 };
