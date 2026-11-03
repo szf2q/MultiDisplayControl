@@ -176,6 +176,8 @@ class ManagementWindow : public QWidget
     QCheckBox *runAsAdminCheck = nullptr;
     /** 禁用 Win 键开关：保存后立即生效，用于避免误触系统组合键打断全屏展示 */
     QCheckBox *disableWinKeyCheck = nullptr;
+    /** 嵌入应用去掉边框开关：开启后桌面应用客户区铺满整块屏幕，需重启后生效 */
+    QCheckBox *stripAppBorderCheck = nullptr;
     QPushButton *saveButton = nullptr;
     QPushButton *reloadButton = nullptr;
     QPushButton *closeButton = nullptr;

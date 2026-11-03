@@ -85,6 +85,8 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     runAsAdminCheck = new QCheckBox(QStringLiteral("以管理员运行（需重启）"), this);
     // 禁用 Win 键：勾选后由全局键盘钩子吞掉 Win 键，避免误触 Win+D/Win+R 打断全屏展示
     disableWinKeyCheck = new QCheckBox(QStringLiteral("禁用 Win 键"), this);
+    // 去掉嵌入应用边框：勾选后桌面应用不显示自身标题栏与边框，客户区完整铺满屏幕
+    stripAppBorderCheck = new QCheckBox(QStringLiteral("嵌入应用去掉边框（需重启）"), this);
 
     QHBoxLayout *settingLayout = new QHBoxLayout();
     settingLayout->addWidget(showIndexCheck);
@@ -92,6 +94,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     settingLayout->addWidget(debugModeCheck);
     settingLayout->addWidget(runAsAdminCheck);
     settingLayout->addWidget(disableWinKeyCheck);
+    settingLayout->addWidget(stripAppBorderCheck);
     settingLayout->addStretch(1);
 
     // ==================== 两栏内容（软件清单 | 屏幕布局） ====================
@@ -145,6 +148,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     connect(debugModeCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
     connect(runAsAdminCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
     connect(disableWinKeyCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
+    connect(stripAppBorderCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
 
     connect(libraryPanel, &SoftwareLibraryPanel::configChanged, this, [this]() {
         if (layoutCanvas != nullptr)
@@ -179,7 +183,8 @@ void ManagementWindow::setConfig(const MultiScreenConfig &config)
 
     // 回填全局开关，阻塞信号避免触发“未保存”标记
     const QList<QCheckBox *> checks = QList<QCheckBox *>() << showIndexCheck << sortScreenCheck << debugModeCheck
-                                                           << runAsAdminCheck << disableWinKeyCheck;
+                                                           << runAsAdminCheck << disableWinKeyCheck
+                                                           << stripAppBorderCheck;
     for (int i = 0; i < checks.size(); i++)
     {
         checks[i]->blockSignals(true);
@@ -189,6 +194,7 @@ void ManagementWindow::setConfig(const MultiScreenConfig &config)
     debugModeCheck->setChecked(m_config.debugMode);
     runAsAdminCheck->setChecked(m_config.runAsAdministrator);
     disableWinKeyCheck->setChecked(m_config.disableWinKey);
+    stripAppBorderCheck->setChecked(m_config.stripAppBorder);
     for (int i = 0; i < checks.size(); i++)
     {
         checks[i]->blockSignals(false);
@@ -404,11 +410,13 @@ void ManagementWindow::onGlobalSettingChanged()
     m_config.debugMode = debugModeCheck->isChecked();
     m_config.runAsAdministrator = runAsAdminCheck->isChecked();
     m_config.disableWinKey = disableWinKeyCheck->isChecked();
+    m_config.stripAppBorder = stripAppBorderCheck->isChecked();
     for (int i = 0; i < m_config.screenList.size(); i++)
     {
         m_config.screenList[i].showIndex = m_config.showIndex;
         m_config.screenList[i].sortScreen = m_config.sortScreen;
         m_config.screenList[i].debugMode = m_config.debugMode;
+        m_config.screenList[i].stripAppBorder = m_config.stripAppBorder;
     }
     markDirty();
 }
@@ -509,6 +517,7 @@ MultiScreenConfig ManagementWindow::buildSubmitConfig() const
         screen.showIndex = result.showIndex;
         screen.sortScreen = result.sortScreen;
         screen.debugMode = result.debugMode;
+        screen.stripAppBorder = result.stripAppBorder;
         // 旧配置没有物理屏标识：首次保存时按当前连接顺序补齐，后续插拔也能稳定匹配
         if (screen.displayName.isEmpty() && i < screens.size())
         {

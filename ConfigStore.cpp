@@ -206,6 +206,7 @@ bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *confi
     config->debugMode = global.value(QStringLiteral("debugMode")).toBool(false);
     config->runAsAdministrator = global.value(QStringLiteral("runAsAdministrator")).toBool(false);
     config->disableWinKey = global.value(QStringLiteral("disableWinKey")).toBool(false);
+    config->stripAppBorder = global.value(QStringLiteral("stripAppBorder")).toBool(false);
 
     config->softwareList.clear();
     const QJsonArray softwareArray = root.value(QStringLiteral("software")).toArray();
@@ -268,6 +269,7 @@ bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *confi
         screen.showIndex = config->showIndex;
         screen.sortScreen = config->sortScreen;
         screen.debugMode = config->debugMode;
+        screen.stripAppBorder = config->stripAppBorder;
 
         const QJsonArray apps = object.value(QStringLiteral("apps")).toArray();
         for (int j = 0; j < apps.size(); j++)
@@ -299,6 +301,8 @@ bool ConfigStore::loadFromIni(const QString &dir, MultiScreenConfig *config, QSt
         ini.getValue(QStringLiteral("screen"), QStringLiteral("runas_administrator"), false).toBool();
     // 旧版 ini 没有该配置项时按 false 处理，保证升级后行为与旧版本一致
     config->disableWinKey = ini.getValue(QStringLiteral("screen"), QStringLiteral("disable_win_key"), false).toBool();
+    // 旧版 ini 没有去边框配置，默认保持应用自身边框
+    config->stripAppBorder = ini.getValue(QStringLiteral("screen"), QStringLiteral("strip_app_border"), false).toBool();
 
     // 旧配置同一路径可能带不同窗口标题，这里以“路径 + 标题”作为去重键，避免误合并
     QHash<QString, QString> softwareKeyToId;
@@ -313,6 +317,7 @@ bool ConfigStore::loadFromIni(const QString &dir, MultiScreenConfig *config, QSt
         screen.sortScreen = config->sortScreen;
         screen.showIndex = config->showIndex;
         screen.debugMode = config->debugMode;
+        screen.stripAppBorder = config->stripAppBorder;
         screen.tabOffsetX = ini.getValue(section, QStringLiteral("tab_offset_x"), 0).toInt();
         if (screen.tabOffsetX < 0)
         {
@@ -432,6 +437,7 @@ bool ConfigStore::writeJson(const QString &filePath, const MultiScreenConfig &co
     global.insert(QStringLiteral("debugMode"), config.debugMode);
     global.insert(QStringLiteral("runAsAdministrator"), config.runAsAdministrator);
     global.insert(QStringLiteral("disableWinKey"), config.disableWinKey);
+    global.insert(QStringLiteral("stripAppBorder"), config.stripAppBorder);
     root.insert(QStringLiteral("global"), global);
 
     QJsonArray softwareArray;

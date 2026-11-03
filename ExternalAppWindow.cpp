@@ -795,9 +795,17 @@ void ExternalAppWindow::embedNativeWindow(AppConfig &app, ProcessInfo &process, 
     style &= ~WS_MAXIMIZE;
     style &= ~WS_MINIMIZE;
     style |= WS_CHILD;
-    // 按要求保留目标窗口自身的边框与标题栏（WS_CAPTION / WS_BORDER），嵌入后外观与独立运行一致；
+    // 默认保留目标窗口自身的边框与标题栏（WS_CAPTION / WS_BORDER），嵌入后外观与独立运行一致；
+    // 若配置开启“去掉边框”，则连同标题栏一起清除，让客户区铺满整块屏幕。
     // WS_CHILD 与 WS_POPUP 互斥，必须去掉弹出窗口标记
     style &= ~WS_POPUP;
+    const bool stripBorder = config.stripAppBorder;
+    if (stripBorder)
+    {
+        // WS_CAPTION 本身包含 WS_BORDER 与 WS_DLGFRAME，一并清除后不再有非客户区占位
+        style &= ~WS_CAPTION;
+        style &= ~WS_BORDER;
+    }
     // 注意：不要清除目标窗口的 WS_THICKFRAME（可缩放边框）来禁止拖拽调整尺寸。
     // 实测跨进程修改外部 Qt 程序的窗口样式后，该程序会在 Qt5Gui.dll 中崩溃（0xc0000005）。
     // 因此这里保持原有样式不变，改由周期定时器把被拖动过的窗口重新校正为铺满宿主控件。
@@ -821,6 +829,12 @@ void ExternalAppWindow::embedNativeWindow(AppConfig &app, ProcessInfo &process, 
         Sleep(20);
     }
     ShowWindow(process.hwnd, SW_SHOWNA);
+    if (stripBorder)
+    {
+        // SET_WINDOW_LONG_PTR 改样式后，非客户区尺寸不一定立刻重算：
+        // 显示后按屏幕尺寸再强制校正一次，保证去掉边框的客户区完整铺满整块屏幕
+        MoveWindow(process.hwnd, 0, 0, rect.width(), rect.height(), TRUE);
+    }
     // 启动尺寸校正定时器，抵消用户用鼠标拖动窗口边框造成的尺寸变化
     nativeHostWindows.insert(host, (WId)process.hwnd);
     // 宿主控件销毁时立即摘掉映射：定时器每 200ms 遍历该映射，
@@ -1402,6 +1416,7 @@ void ExternalAppWindow::applyScreenConfig(const ScreenConfig &cfg, QScreen *targ
     this->config.showIndex = cfg.showIndex;
     this->config.debugMode = cfg.debugMode;
     this->config.tabOffsetX = cfg.tabOffsetX;
+    this->config.stripAppBorder = cfg.stripAppBorder;
 
     if (this->config.screenTitle.isEmpty())
     {

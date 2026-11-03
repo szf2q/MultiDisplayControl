@@ -99,6 +99,8 @@ struct ScreenConfig
     QString screenTitle;
     bool debugMode = false;
     int tabOffsetX = 0;
+    /** 是否去掉被嵌入桌面应用的标题栏与边框，使客户区铺满整块屏幕 */
+    bool stripAppBorder = false;
     /** 软件分配列表，顺序即标签顺序 */
     QList<ScreenAssignment> assignments;
     /** 运行时应用列表，由 assignments 解析生成 */
@@ -123,6 +125,14 @@ struct MultiScreenConfig
      * 该开关属于全局设置，保存后立即生效，无需重启。
      */
     bool disableWinKey = false;
+    /**
+     * @brief 是否去掉被嵌入桌面应用的标题栏与边框
+     *
+     * 开启后嵌入普通桌面应用时会清除 WS_CAPTION / WS_BORDER 并重新校正窗口尺寸，
+     * 让应用客户区完整铺满整块屏幕；关闭时保持应用自身标题栏与边框（默认行为）。
+     * 该开关只在应用嵌入时生效，修改后需重启主程序或重新加载应用。
+     */
+    bool stripAppBorder = false;
     /** 单块屏幕配置列表，顺序即屏幕序号 */
     QList<ScreenConfig> screenList;
     /** 全局软件清单 */

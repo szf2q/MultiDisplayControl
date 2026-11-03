@@ -111,6 +111,7 @@ MultiDisplayControl/
 - `loadApps(bool isReload)`：四阶段加载——并行预启动本屏外部程序 → 按配置顺序创建网页标签并登记待等待的外部程序 → 并行等待窗口就绪并嵌入 → 最后串行加载 PPT；结束后归位到配置首项并初始化标签栏，若无可展示内容则隐藏窗口。
 - `reloadCurrentTab()`：故障恢复用，只重载当前选中的标签页——外部程序先结束旧进程再重新启动并原地替换标签，网页重建 `CefWebView` 并重新加载，PPT 放映保持不变（避免与现有 COM 放映实例冲突）；同屏其它标签页不受影响。
 - `startExternalProgram()` / `findProcessInfo()` / `startProcess()`：以当前用户权限启动外部程序 → 优先按 exe 路径定位窗口（进程名 + 标题匹配兜底），轮询直至稳定命中窗口（命中后连续确认 3 次）→ 以宿主控件嵌入标签页。
+- 嵌入桌面应用时默认保留其标题栏与边框；管理界面开启「嵌入应用去掉边框」后，嵌入时会清除 `WS_CAPTION`/`WS_BORDER`，并在显示后按屏幕尺寸再次校正窗口大小，使客户区完整铺满整块屏幕（不清除 `WS_THICKFRAME`，避免外部 Qt 程序崩溃）。
 - `loadWebPage()`：通过 `CefWebView`（QCefView/CEF 109）加载网页，全进程共用 `<exe目录>/cefCache` 缓存目录。
 - `startAndPlayPpt()` / `playPpt()`：通过 COM 自动选择 WPS 或 PowerPoint，配置循环放映参数（`LoopUntilStopped`、`AdvanceMode=1` 等）后 `Run()`，并轮询守护放映窗口，嵌入到标签页。
 - `tabIndexChanged()`：标签切换时展示对应外部窗口、隐藏其余窗口；Chrome 窗口额外通过 `ShowWindow()` 同步显隐。
@@ -159,6 +160,7 @@ MultiDisplayControl/
 | `debug_mode` | bool | false | 调试模式：不启动任何应用，仅显示占位标签页并保留标签栏 |
 | `runas_administrator` | bool | false | 是否以管理员身份运行（非管理员时自动提权重启） |
 | `disable_win_key` | bool | false | 是否禁用 Windows 徽标键（`config.json` 中为 `global.disableWinKey`），开启后 Win 键及 Win+D、Win+R 等系统组合键失效 |
+| `strip_app_border` | bool | false | 是否去掉被嵌入桌面应用的标题栏与边框（`config.json` 中为 `global.stripAppBorder`）；开启后嵌入时清除 `WS_CAPTION`/`WS_BORDER` 并重新校正窗口尺寸，使客户区铺满整块屏幕，修改后需重启主程序 |
 
 ### 7.2 屏幕配置节 `[screen-N]`（N 从 1 开始）
 
