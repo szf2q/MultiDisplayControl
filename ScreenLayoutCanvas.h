@@ -383,7 +383,6 @@ class ScreenLayoutCanvas : public QWidget
     QScrollArea *cardScroll = nullptr;
     QWidget *cardContainer = nullptr;
     QPushButton *addButton = nullptr;
-    QPushButton *removeButton = nullptr;
     QList<ScreenCard *> m_cards;
     int m_selectedRow = -1;
 };

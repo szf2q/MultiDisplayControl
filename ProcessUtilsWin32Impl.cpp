@@ -96,7 +96,9 @@ int ProcessUtilsWin32::runAsAdministrators()
         wchar_t szPath[MAX_PATH];
         if (GetModuleFileName(NULL, szPath, ARRAYSIZE(szPath)))
         {
-            SHELLEXECUTEINFO sei;
+            // SEI 必须整体清零：ShellExecuteEx 会读取 lpParameters、lpDirectory 等未赋值字段，
+            // 若保留栈上随机值会以非法指针进入 SHELL32 内部并触发访问违例（启动即崩溃）
+            SHELLEXECUTEINFO sei = {0};
             sei.cbSize = sizeof(sei);
             sei.fMask = SEE_MASK_NOCLOSEPROCESS;
             sei.lpVerb = L"runas";

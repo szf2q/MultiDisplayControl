@@ -49,8 +49,15 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
 
     saveButton = new QPushButton(QStringLiteral("保存并应用"), this);
     saveButton->setObjectName(QStringLiteral("primaryButton"));
-    reloadButton = new QPushButton(QStringLiteral("重新加载"), this);
+    // 「重新加载」仅表示从磁盘重新读取配置文件刷新管理界面，不重启已运行的应用
+    reloadButton = new QPushButton(QStringLiteral("重新加载配置"), this);
     closeButton = new QPushButton(QStringLiteral("关闭"), this);
+
+    // 顶部按钮按文字长度设置最小宽度：样式表里的 15px 字体不会参与 sizeHint 计算，
+    // 否则「重新加载配置」这类较长文案会被按钮边界裁掉最后一个字
+    saveButton->setMinimumWidth(130);
+    reloadButton->setMinimumWidth(150);
+    closeButton->setMinimumWidth(90);
 
     QVBoxLayout *titleLayout = new QVBoxLayout();
     titleLayout->setContentsMargins(0, 0, 0, 0);

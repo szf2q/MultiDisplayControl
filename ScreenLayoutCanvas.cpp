@@ -404,12 +404,10 @@ ScreenLayoutCanvas::ScreenLayoutCanvas(QWidget *parent) : QWidget(parent)
     cardScroll->setWidget(cardContainer);
 
     addButton = new QPushButton(QStringLiteral("+ 添加屏幕"), this);
-    removeButton = new QPushButton(QStringLiteral("删除选中屏幕"), this);
-    removeButton->setObjectName(QStringLiteral("dangerButton"));
 
+    // 删除入口只保留屏幕卡片上的「移除该屏」，此处不再重复提供删除按钮
     QHBoxLayout *buttonLayout = new QHBoxLayout();
     buttonLayout->addWidget(addButton);
-    buttonLayout->addWidget(removeButton);
     buttonLayout->addStretch(1);
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
@@ -419,7 +417,6 @@ ScreenLayoutCanvas::ScreenLayoutCanvas(QWidget *parent) : QWidget(parent)
     mainLayout->addLayout(buttonLayout);
 
     connect(addButton, &QPushButton::clicked, this, [this]() { onAddScreen(); });
-    connect(removeButton, &QPushButton::clicked, this, [this]() { onRemoveScreen(); });
     if (qApp != nullptr)
     {
         connect(qApp, &QGuiApplication::screenAdded, this, [this](QScreen *) {
