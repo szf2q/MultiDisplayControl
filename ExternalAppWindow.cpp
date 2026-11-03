@@ -559,7 +559,8 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload, int 
     style &= ~WS_MAXIMIZE;
     style &= ~WS_MINIMIZE;
     style |= WS_CHILD;
-    // 按要求保留目标窗口自身的边框与标题栏（WS_CAPTION / WS_BORDER），嵌入后外观与独立运行一致
+    // 按要求保留目标窗口自身的边框与标题栏（WS_CAPTION / WS_BORDER），嵌入后外观与独立运行一致；
+    // WS_CHILD 与 WS_POPUP 互斥，必须去掉弹出窗口标记
     style &= ~WS_POPUP;
     // 注意：不要清除目标窗口的 WS_THICKFRAME（可缩放边框）来禁止拖拽调整尺寸。
     // 实测跨进程修改外部 Qt 程序的窗口样式后，该程序会在 Qt5Gui.dll 中崩溃（0xc0000005）。
@@ -734,7 +735,8 @@ void ExternalAppWindow::playPpt(QAxWidget *ppt, QAxObject *presentation, QAxObje
     QWidget *container = QWidget::createWindowContainer(pptWindow);
     LONG_PTR style = GetWindowLongPtr(process.hwnd, GWL_STYLE);
     style |= WS_CHILD;
-    // 保留放映窗口自身的边框样式，仅去掉弹出窗口标记以作为子窗口嵌入
+    style &= ~WS_CAPTION;
+    style &= ~WS_BORDER;
     style &= ~WS_POPUP;
     SetWindowLongPtr(process.hwnd, GWL_STYLE, style);
     //设置外部应用窗口的尺寸到最大
@@ -1371,33 +1373,66 @@ bool ExternalAppWindow::startProcess(AppConfig &app)
     return true;
 }
 
+ProcessInfo ExternalAppWindow::probeProcessWindow(AppConfig &app)
+{
+    // chrome 继续沿用“进程名 + 标题”的匹配方式：chrome 的主窗口由浏览器进程承载，
+    // 但同路径下还有渲染、GPU 等子进程，按 exe 路径取到的可能不是可嵌入的主窗口
+    if (app.processName.contains("chrome.exe"))
+    {
+        QVector<ProcessInfo> processList = processUtils->getProcessInfo(app.processName, app.windowTitle);
+        if (processList.isEmpty())
+        {
+            return ProcessInfo();
+        }
+        return processList.last();
+    }
+    // 桌面应用优先按可执行文件路径定位窗口：
+    // 启动阶段已按路径结束同路径旧进程，命中的一定是本次拉起的实例。
+    // 旧实现只按“进程名 + 窗口标题”子串匹配，一旦程序运行中标题发生变化
+    // （例如编辑器把文档名、修改状态拼进标题），就会一直匹配不到窗口而嵌入失败。
+    ProcessInfo byPath = processUtils->getProcessInfoByPath(app.appPath);
+    if (byPath.hwnd != 0)
+    {
+        return byPath;
+    }
+    // 兜底：路径暂时取不到窗口时（例如窗口实际由启动器派生的子进程承载），
+    // 再退回按“进程名 + 窗口标题”匹配，兼容原有配置
+    if (app.windowTitle.isEmpty())
+    {
+        return ProcessInfo();
+    }
+    QVector<ProcessInfo> processList = processUtils->getProcessInfo(app.processName, app.windowTitle);
+    if (processList.isEmpty())
+    {
+        return ProcessInfo();
+    }
+    return processList.last();
+}
+
 ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
 {
-    QVector<ProcessInfo> processList;
     ProcessInfo process;
-    // 等待窗口出现的最长时间与探测间隔。原实现上限为 30*100 次、每次 Sleep(200ms)，
-    // 最坏情况下会阻塞主线程约 600 秒，这里将其收敛为约 30 秒。
-    // 由于外部程序已在 prestartApps() 阶段并行拉起，窗口通常已存在，
-    // 连续命中次数由 5 次降为 3 次（约 600ms），用于确认窗口已稳定创建，避免抓到过渡态句柄。
+    // 等待窗口出现的最长时间与探测间隔。
+    // 外部程序已在 prestartApps() 阶段并行拉起，正常情况下窗口在数秒内就会出现；
+    // 若超过该时限仍未找到，说明该程序没有可嵌入的可见窗口，直接放弃嵌入。
+    // 旧实现最长阻塞主线程 30 秒，期间整个界面显示“未响应”，体验极差。
     const int intervalMs = 200;
-    const int maxWaitCount = 30000 / intervalMs;
+    const int maxWaitCount = 8000 / intervalMs;
+    // 连续命中次数用于确认窗口已稳定创建，避免抓到程序启动过程中的过渡态句柄
     const int stableHitCount = 3;
     int count = 0;
-    bool isFind = false;
     int findCount = 0;
     qDebug() << "starting find process info, app = " << app.appPath;
     while (count < maxWaitCount)
     {
-        processList.clear();
-        processList = processUtils->getProcessInfo(app.processName, app.windowTitle);
-        if (processList.size() == 0)
+        ProcessInfo candidate = probeProcessWindow(app);
+        if (candidate.hwnd == 0)
         {
             count++;
             Sleep(intervalMs);
             continue;
         }
-        process = processList[processList.size() - 1];
-        isFind = true;
+        process = candidate;
         findCount++;
         Sleep(intervalMs);
         if (findCount >= stableHitCount)
@@ -1405,11 +1440,10 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
             break;
         }
     }
-    if (!isFind)
+    if (process.hwnd == 0)
     {
-        qDebug() << "get process list by process name and window title failed, processName = " << app.processName
-                 << ", processTitle = " << app.windowTitle;
-        processList.clear();
+        qDebug() << "get process window failed, processName = " << app.processName
+                 << ", processTitle = " << app.windowTitle << ", appPath = " << app.appPath;
         return process;
     }
 
@@ -1422,7 +1456,6 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
     qDebug() << "pid = " << process.pid << ", HWND = " << process.hwnd << ", processName = " << process.processName
              << ", titleName = " << process.titleName << ", className = " << process.className
              << ", processPath = " << process.processPath;
-    processList.clear();
     return process;
 }
 ExternalAppWindow::~ExternalAppWindow()

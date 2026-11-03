@@ -206,6 +206,24 @@ class ExternalAppWindow : public QMainWindow
      */
     void stopExternalApp(AppConfig &app);
     bool startProcess(AppConfig &app);
+    /**
+     * @brief 探测一次外部程序的可嵌入窗口
+     *
+     * 桌面应用优先按可执行文件路径定位（不依赖窗口标题），chrome 及路径匹配失败时
+     * 退回“进程名 + 窗口标题”匹配。
+     *
+     * @param app 应用配置
+     * @return 命中的进程信息，hwnd 为 0 表示本次未找到窗口
+     */
+    ProcessInfo probeProcessWindow(AppConfig &app);
+    /**
+     * @brief 轮询等待外部程序窗口出现
+     *
+     * 最长等待 8 秒，期间连续 3 次命中同一个窗口才认为窗口已稳定创建。
+     *
+     * @param app 应用配置
+     * @return 找到的进程信息，hwnd 为 0 表示最终未找到窗口
+     */
     ProcessInfo findProcessInfo(AppConfig &app);
     /**
      * @brief 加载网页应用（QCefView / CEF 内核实现）

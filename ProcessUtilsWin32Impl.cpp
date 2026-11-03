@@ -155,7 +155,9 @@ ProcessInfo ProcessUtilsWin32::getProcessInfoByPath(const QString &processPath)
     {
         // qDebug() << "processPath = " << process.processPath;
         QString tmpFilePath = fileInfo.filePath().replace("/", QDir::separator());
-        if (process.processPath == tmpFilePath)
+        // Windows 路径本身不区分大小写，配置中手写的盘符/目录大小写与系统返回的路径
+        // 可能不一致，这里统一按不区分大小写比较，避免因此找不到已启动的进程
+        if (process.processPath.compare(tmpFilePath, Qt::CaseInsensitive) == 0)
         {
             result = process;
             break;
