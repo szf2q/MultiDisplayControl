@@ -325,7 +325,6 @@ void killStaleWpsInstances(ProcessUtils *processUtils)
     }
 }
 
-QMutex globalMutex;
 int main(int argc, char *argv[])
 {
     try

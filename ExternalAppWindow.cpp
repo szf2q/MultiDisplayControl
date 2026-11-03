@@ -217,99 +217,122 @@ void ExternalAppWindow::loadApps(bool isReload)
         // 窗口要等所有应用加载完才会第一次绘制，用户会长时间看到桌面或黑屏
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
 
-        // 第二阶段：按配置顺序创建标签，保证第一个标签就是配置里的第一个应用。
-        // 普通外部程序若此刻窗口尚未出现，先登记下来，留到下一阶段统一并行等待，
-        // 避免像旧实现那样在单个应用上阻塞，导致后面所有标签都要排队
         QVector<int> pendingExternalIndexes;
         QVector<int> pptAppIndexes;
-        for (int i = 0; i < config.appCount; i++)
-        {
-            AppConfig &app = config.appList[i];
-            if (isWebAppPath(app.appPath))
-            {
-                loadWebPage(app, i);
-                // 每建好一个网页标签就处理一次事件循环，让标签栏与页面尽早刷新出来
-                QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-                continue;
-            }
-            if (isPptAppPath(app.appPath))
-            {
-                pptAppIndexes.append(i);
-                continue;
-            }
-            // 预启动阶段已明确失败的应用不再进入等待，否则会白等满超时时长
-            if (!isReload && failedAppPaths.contains(app.appPath))
-            {
-                qDebug() << "prestart process failed, skip embedding, app path = " << app.appPath;
-                continue;
-            }
-            // 未经 prestartApps() 拉起过的应用在这里保底启动，
-            // 已预启动的应用不再重复启动，避免误杀掉刚拉起的进程
-            if (!isReload && !prestartedAppPaths.contains(app.appPath) && !startProcess(app))
-            {
-                qDebug() << "start process failed, app path = " << app.appPath;
-                continue;
-            }
-            // 快速通道：窗口已经就绪时立即嵌入，不进入等待队列
-            ProcessInfo process = probeProcessWindow(app);
-            if (process.hwnd != 0)
-            {
-                registerExternalProcess(app, process);
-                embedProcessWindow(app, process, i);
-                QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-                continue;
-            }
-            pendingExternalIndexes.append(i);
-        }
-
-        // 第三阶段：对第一轮未就绪的外部程序并行等待窗口，
-        // 总等待时长约等于“最慢的那个应用”，而不是各应用等待时间之和
-        if (!pendingExternalIndexes.isEmpty())
-        {
-            QHash<int, ProcessInfo> readyWindows = waitForProcessWindows(pendingExternalIndexes);
-            for (int i = 0; i < pendingExternalIndexes.size(); i++)
-            {
-                const int appIndex = pendingExternalIndexes[i];
-                AppConfig &app = config.appList[appIndex];
-                if (!readyWindows.contains(appIndex))
-                {
-                    qDebug() << "get process window failed, processName = " << app.processName
-                             << ", processTitle = " << app.windowTitle << ", appPath = " << app.appPath;
-                    continue;
-                }
-                ProcessInfo process = readyWindows.value(appIndex);
-                embedProcessWindow(app, process, appIndex);
-                // 嵌入完成后立即让宿主窗口绘制一次，避免所有外部程序都嵌完才一起显示
-                QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-            }
-        }
-
-        // 第四阶段：PPT 通过 ActiveQt 调用 WPS/PowerPoint，必须在主线程串行执行，
-        // 放到最后处理，避免放映窗口的启动耗时阻塞前面所有标签的创建
-        for (int i = 0; i < pptAppIndexes.size(); i++)
-        {
-            startAndPlayPpt(config.appList[pptAppIndexes[i]], pptAppIndexes[i]);
-        }
+        createTabsInConfigOrder(isReload, &pendingExternalIndexes, &pptAppIndexes);
+        embedPendingExternalApps(pendingExternalIndexes);
+        loadPptApps(pptAppIndexes);
     }
     // 所有嵌入均已同步完成，这里只保留极短间隔让 Qt 处理一次布局，不再固定等待 1 秒
     Sleep(200);
-    // 首次加载时显式切回配置中的第一个应用：网页标签先建、外部程序与 PPT 后建，
-    // 按插入位置建标签会让当前页停在后建的那个标签上，这里归位到配置首项
     appsLoading = false;
-    if (!isReload && config.appCount > 0 && ui->tabWidget->count() > 0)
-    {
-        const int firstTabIndex = findTabIndexByAppId(config.appList[0].id);
-        if (firstTabIndex >= 0)
-        {
-            ui->tabWidget->setCurrentIndex(firstTabIndex);
-        }
-    }
+    selectFirstAppAfterLoad(isReload);
     qDebug() << "ui->tabWidget->count() = " << ui->tabWidget->count();
     if (ui->tabWidget->count() <= 0 && !config.debugMode)
     {
         this->hide();
     }
     this->initTabWidget();
+}
+
+void ExternalAppWindow::createTabsInConfigOrder(bool isReload, QVector<int> *pendingExternalIndexes,
+                                                QVector<int> *pptAppIndexes)
+{
+    pendingExternalIndexes->clear();
+    pptAppIndexes->clear();
+    // 按配置顺序创建标签，保证第一个标签就是配置里的第一个应用。
+    // 普通外部程序若此刻窗口尚未出现，先登记下来，留到下一阶段统一并行等待，
+    // 避免像旧实现那样在单个应用上阻塞，导致后面所有标签都要排队
+    for (int i = 0; i < config.appCount; i++)
+    {
+        AppConfig &app = config.appList[i];
+        if (isWebAppPath(app.appPath))
+        {
+            loadWebPage(app, i);
+            // 每建好一个网页标签就处理一次事件循环，让标签栏与页面尽早刷新出来
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            continue;
+        }
+        if (isPptAppPath(app.appPath))
+        {
+            pptAppIndexes->append(i);
+            continue;
+        }
+        // 预启动阶段已明确失败的应用不再进入等待，否则会白等满超时时长
+        if (!isReload && failedAppPaths.contains(app.appPath))
+        {
+            qDebug() << "prestart process failed, skip embedding, app path = " << app.appPath;
+            continue;
+        }
+        // 未经 prestartApps() 拉起过的应用在这里保底启动，
+        // 已预启动的应用不再重复启动，避免误杀掉刚拉起的进程
+        if (!isReload && !prestartedAppPaths.contains(app.appPath) && !startProcess(app))
+        {
+            qDebug() << "start process failed, app path = " << app.appPath;
+            continue;
+        }
+        // 快速通道：窗口已经就绪时立即嵌入，不进入等待队列
+        ProcessInfo process = probeProcessWindow(app);
+        if (process.hwnd != 0)
+        {
+            registerExternalProcess(app, process);
+            embedProcessWindow(app, process, i);
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            continue;
+        }
+        pendingExternalIndexes->append(i);
+    }
+}
+
+void ExternalAppWindow::embedPendingExternalApps(const QVector<int> &pendingExternalIndexes)
+{
+    if (pendingExternalIndexes.isEmpty())
+    {
+        return;
+    }
+    // 对第一轮未就绪的外部程序并行等待窗口，
+    // 总等待时长约等于“最慢的那个应用”，而不是各应用等待时间之和
+    QHash<int, ProcessInfo> readyWindows = waitForProcessWindows(pendingExternalIndexes);
+    for (int i = 0; i < pendingExternalIndexes.size(); i++)
+    {
+        const int appIndex = pendingExternalIndexes[i];
+        AppConfig &app = config.appList[appIndex];
+        if (!readyWindows.contains(appIndex))
+        {
+            qDebug() << "get process window failed, processName = " << app.processName
+                     << ", processTitle = " << app.windowTitle << ", appPath = " << app.appPath;
+            continue;
+        }
+        ProcessInfo process = readyWindows.value(appIndex);
+        embedProcessWindow(app, process, appIndex);
+        // 嵌入完成后立即让宿主窗口绘制一次，避免所有外部程序都嵌完才一起显示
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    }
+}
+
+void ExternalAppWindow::loadPptApps(const QVector<int> &pptAppIndexes)
+{
+    // PPT 通过 ActiveQt 调用 WPS/PowerPoint，必须在主线程串行执行，
+    // 放到最后处理，避免放映窗口的启动耗时阻塞前面所有标签的创建
+    for (int i = 0; i < pptAppIndexes.size(); i++)
+    {
+        startAndPlayPpt(config.appList[pptAppIndexes[i]], pptAppIndexes[i]);
+    }
+}
+
+void ExternalAppWindow::selectFirstAppAfterLoad(bool isReload)
+{
+    // 首次加载时显式切回配置中的第一个应用：网页标签先建、外部程序与 PPT 后建，
+    // 按插入位置建标签会让当前页停在后建的那个标签上，这里归位到配置首项
+    if (isReload || config.appCount <= 0 || ui->tabWidget->count() <= 0)
+    {
+        return;
+    }
+    const int firstTabIndex = findTabIndexByAppId(config.appList[0].id);
+    if (firstTabIndex >= 0)
+    {
+        ui->tabWidget->setCurrentIndex(firstTabIndex);
+    }
 }
 
 void ExternalAppWindow::prestartApps()
@@ -721,30 +744,39 @@ void ExternalAppWindow::embedProcessWindow(AppConfig &app, ProcessInfo &process,
 {
     //获取待嵌入的外部应用窗口
     qDebug() << "process.hwnd = " << process.hwnd << ", wid = " << (WId)process.hwnd;
-
+    // chrome 的窗口结构特殊，继续沿用 Qt 的 foreign window 方式挂到本窗口下；
+    // 非 chrome 的外部程序走纯 Win32 嵌入实现
     if (process.processName == "chrome.exe")
     {
-        // chrome 的窗口结构特殊，继续沿用 Qt 的 foreign window 方式挂到本窗口下；
-        // 非 chrome 的外部程序不再经过任何 Qt 窗口包装（见下方 Win32 嵌入实现）。
-        QWindow *externanlWindow = QWindow::fromWinId((WId)process.hwnd);
-        externanlWindow->setFlags(Qt::FramelessWindowHint | Qt::Tool);
-        qDebug() << "externanlWindow = " << externanlWindow << ", wid = " << externanlWindow->winId();
-        externanlWindow->setParent(this->windowHandle());
-        externanlWindow->setGeometry(0, 0, this->geometry().width(), this->geometry().height());
-        // 等待阶段已把本应用的进程信息按 appId 追加到 externalAppList，
-        // 这里只补充 Qt 窗口包装，标签创建交给统一的 addWindowToTabWidget 处理
-        for (int i = 0; i < externalAppList.size(); i++)
-        {
-            if (!app.id.isEmpty() && externalAppList[i].appId == app.id)
-            {
-                externalAppList[i].externalWindow = externanlWindow;
-                break;
-            }
-        }
-        addWindowToTabWidget(new QTabWidget(), app, insertIndex);
-        // 窗体所有权已由本对象析构函数统一释放，这里不再注册 aboutToQuit 回收，避免重复释放
+        embedChromeWindow(app, process, insertIndex);
         return;
     }
+    embedNativeWindow(app, process, insertIndex);
+}
+
+void ExternalAppWindow::embedChromeWindow(AppConfig &app, ProcessInfo &process, int insertIndex)
+{
+    QWindow *externanlWindow = QWindow::fromWinId((WId)process.hwnd);
+    externanlWindow->setFlags(Qt::FramelessWindowHint | Qt::Tool);
+    qDebug() << "externanlWindow = " << externanlWindow << ", wid = " << externanlWindow->winId();
+    externanlWindow->setParent(this->windowHandle());
+    externanlWindow->setGeometry(0, 0, this->geometry().width(), this->geometry().height());
+    // 等待阶段已把本应用的进程信息按 appId 追加到 externalAppList，
+    // 这里只补充 Qt 窗口包装，标签创建交给统一的 addWindowToTabWidget 处理
+    for (int i = 0; i < externalAppList.size(); i++)
+    {
+        if (!app.id.isEmpty() && externalAppList[i].appId == app.id)
+        {
+            externalAppList[i].externalWindow = externanlWindow;
+            break;
+        }
+    }
+    addWindowToTabWidget(new QTabWidget(), app, insertIndex);
+    // 窗体所有权已由本对象析构函数统一释放，这里不再注册 aboutToQuit 回收，避免重复释放
+}
+
+void ExternalAppWindow::embedNativeWindow(AppConfig &app, ProcessInfo &process, int insertIndex)
+{
     // 不使用 QWindow::fromWinId + QWidget::createWindowContainer 的方式嵌入：
     // 实测该方式下被嵌入的 Qt 外部程序（例如 DocumentCount.exe）会在嵌入后数秒内
     // 于 Qt5Gui.dll 中发生访问违例崩溃（0xc0000005），现象就是该标签页内容消失、
@@ -1086,11 +1118,35 @@ void ExternalAppWindow::startNativeHostFitTimer()
 
 void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app, int insertIndex)
 {
+    prepareTabPage(widget, app);
+    const QString tabTitle = buildTabTitle(app);
+    qDebug() << "tabTitle = " << tabTitle;
+    const int findTabIndex = findExistingTabIndex(app, tabTitle);
+    qDebug() << "findTabIndex = " << findTabIndex;
+    // 将已登记进程项的 tabName 同步为该 app 实际使用的标签文本（含 show_index 时的序号前缀），
+    // 保证兼容旧匹配逻辑时判断成立
+    syncRegisteredTabName(app, tabTitle);
+    if (findTabIndex >= 0)
+    {
+        replaceTabAt(findTabIndex, widget, app, tabTitle);
+    }
+    else
+    {
+        appendTab(widget, app, tabTitle, insertIndex);
+    }
+    // 悬浮标签栏与内容标签页保持完全一致，并按当前页重新同步外部窗口显隐
+    syncFloatingTabBar();
+    tabIndexChanged(ui->tabWidget->currentIndex());
+}
+
+void ExternalAppWindow::prepareTabPage(QWidget *widget, const AppConfig &app)
+{
     QRect rect = currentScreen->geometry();
     //设置容器窗口的尺寸到最大
     widget->setGeometry(0, 0, rect.width(), rect.height());
     widget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    widget->setToolTip(app.appPath);
+    // 不把软件路径写入 tooltip：展示状态下标签页长期可见，路径属于本机敏感信息，
+    // 且悬停提示在无人值守的大屏上也没有实际使用价值
     // 占位底色使用与深色主题一致的深蓝黑：外部窗口/网页渲染完成前不会闪出纯蓝或纯白，
     // 重载或切换标签时视觉过渡更平滑
     widget->setStyleSheet("border:none;background:#010A1B;");
@@ -1100,105 +1156,108 @@ void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app, in
     {
         widget->setProperty("mdcAppId", app.id);
     }
-    //将容器窗口添加到Tab中
-    const QString tabTitle = buildTabTitle(app);
-    qDebug() << "tabTitle = " << tabTitle;
-    int findTabIndex = findTabIndexByAppId(app.id);
-    if (findTabIndex < 0 && app.id.isEmpty())
+}
+
+int ExternalAppWindow::findExistingTabIndex(const AppConfig &app, const QString &tabTitle) const
+{
+    const int matchedById = findTabIndexByAppId(app.id);
+    if (matchedById >= 0 || !app.id.isEmpty())
     {
-        // 兼容早期没有软件 id 的配置：退化为按标签文本匹配
-        for (int i = 0; i < ui->tabWidget->count(); i++)
+        // 有软件 id 时只按 id 匹配：同名标签可能属于不同软件，不能再退回文本匹配
+        return matchedById;
+    }
+    // 兼容早期没有软件 id 的配置：退化为按标签文本匹配
+    for (int i = 0; i < ui->tabWidget->count(); i++)
+    {
+        if (ui->tabWidget->tabText(i) == tabTitle)
         {
-            if (ui->tabWidget->tabText(i) == tabTitle)
-            {
-                findTabIndex = i;
-                break;
-            }
+            return i;
         }
     }
-    qDebug() << "findTabIndex = " << findTabIndex;
-    // 将已登记进程项的 tabName 同步为该 app 实际使用的标签文本（含 show_index 时的序号前缀），
-    // 保证兼容旧匹配逻辑时判断成立
+    return -1;
+}
+
+void ExternalAppWindow::syncRegisteredTabName(const AppConfig &app, const QString &tabTitle)
+{
     for (int i = 0; i < externalAppList.size(); i++)
     {
-        bool matched = !app.id.isEmpty() ? (externalAppList[i].appId == app.id)
-                                         : (externalAppList[i].tabName == app.tabName);
+        const bool matched = !app.id.isEmpty() ? (externalAppList[i].appId == app.id)
+                                               : (externalAppList[i].tabName == app.tabName);
         if (matched)
         {
             externalAppList[i].tabName = tabTitle;
         }
     }
-    if (findTabIndex >= 0)
+}
+
+void ExternalAppWindow::replaceTabAt(int tabIndex, QWidget *widget, AppConfig &app, const QString &tabTitle)
+{
+    // 记录替换前的当前软件：移除旧标签时 Qt 可能把当前页切到相邻标签，
+    // 这里在替换完成后按软件 id 复位，保证 Alt+F5 重载当前标签时不会跳页
+    const QString activeAppIdBefore = currentAppId();
+    // 先用“插入新标签 → 移除旧标签”的方式原位替换，而不是“移除 → 插入”：
+    // 移除当前选中项时 Qt 会自动改选相邻标签并触发切页，导致重载后标签跳变；
+    // 先插入时当前项只是索引后移一位，选中状态保持不变
+    QWidget *oldWidget = ui->tabWidget->widget(tabIndex);
+    ui->tabWidget->insertTab(tabIndex, widget, tabTitle);
+    ui->tabWidget->removeTab(tabIndex + 1);
+    if (oldWidget != nullptr)
     {
-        // 记录替换前的当前软件：移除旧标签时 Qt 可能把当前页切到相邻标签，
-        // 这里在替换完成后按软件 id 复位，保证 Alt+F5 重载当前标签时不会跳页
-        const QString activeAppIdBefore = currentAppId();
-        // 先用“插入新标签 → 移除旧标签”的方式原位替换，而不是“移除 → 插入”：
-        // 移除当前选中项时 Qt 会自动改选相邻标签并触发切页，导致重载后标签跳变；
-        // 先插入时当前项只是索引后移一位，选中状态保持不变
-        QWidget *oldWidget = ui->tabWidget->widget(findTabIndex);
-        ui->tabWidget->insertTab(findTabIndex, widget, tabTitle);
-        ui->tabWidget->removeTab(findTabIndex + 1);
-        if (oldWidget != nullptr)
+        // QTabWidget::removeTab 只是解除管理、不会销毁控件，
+        // 重载时若不显式释放，旧的网页视图或宿主控件会一直残留在内存中
+        oldWidget->deleteLater();
+    }
+    if (!app.id.isEmpty())
+    {
+        appTabWidgets.insert(app.id, widget);
+    }
+    if (!activeAppIdBefore.isEmpty())
+    {
+        const int restoreIndex = findTabIndexByAppId(activeAppIdBefore);
+        if (restoreIndex >= 0 && restoreIndex != ui->tabWidget->currentIndex())
         {
-            // QTabWidget::removeTab 只是解除管理、不会销毁控件，
-            // 重载时若不显式释放，旧的网页视图或宿主控件会一直残留在内存中
-            oldWidget->deleteLater();
-        }
-        if (!app.id.isEmpty())
-        {
-            appTabWidgets.insert(app.id, widget);
-        }
-        if (!activeAppIdBefore.isEmpty())
-        {
-            const int restoreIndex = findTabIndexByAppId(activeAppIdBefore);
-            if (restoreIndex >= 0 && restoreIndex != ui->tabWidget->currentIndex())
-            {
-                ui->tabWidget->setCurrentIndex(restoreIndex);
-            }
+            ui->tabWidget->setCurrentIndex(restoreIndex);
         }
     }
-    else
+}
+
+void ExternalAppWindow::appendTab(QWidget *widget, AppConfig &app, const QString &tabTitle, int insertIndex)
+{
+    int pos = insertIndex;
+    if (pos < 0 || pos > ui->tabWidget->count())
     {
-        int pos = insertIndex;
-        if (pos < 0 || pos > ui->tabWidget->count())
+        pos = ui->tabWidget->count();
+    }
+    ui->tabWidget->insertTab(pos, widget, tabTitle);
+    if (!app.id.isEmpty())
+    {
+        appTabWidgets.insert(app.id, widget);
+    }
+    if (appsLoading)
+    {
+        // 批量加载期间不自动切页：insertTab 会自动选中新建标签，
+        // 先建好的标签会短暂成为当前页（启动后闪出第二个应用），这里立即取消选中
+        if (ui->tabWidget->currentIndex() >= 0)
         {
-            pos = ui->tabWidget->count();
-        }
-        ui->tabWidget->insertTab(pos, widget, tabTitle);
-        if (!app.id.isEmpty())
-        {
-            appTabWidgets.insert(app.id, widget);
-        }
-        if (appsLoading)
-        {
-            // 批量加载期间不自动切页：insertTab 会自动选中新建标签，
-            // 先建好的标签会短暂成为当前页（启动后闪出第二个应用），这里立即取消选中
-            if (ui->tabWidget->currentIndex() >= 0)
-            {
-                ui->tabWidget->setCurrentIndex(-1);
-            }
-        }
-        else if (ui->tabWidget->count() == 1)
-        {
-            // 只在第一个标签时切换到它；热更新追加标签时保持现场当前页面不变
-            ui->tabWidget->setCurrentIndex(0);
-        }
-        for (int i = 0; i < config.appList.count(); i++)
-        {
-            bool matched = !app.id.isEmpty() ? (config.appList[i].id == app.id)
-                                             : (config.appList[i].appPath == app.appPath);
-            if (matched)
-            {
-                qDebug() << "app index = " << i + 1;
-                config.appList[i].tabIndex = ui->tabWidget->indexOf(widget);
-                break;
-            }
+            ui->tabWidget->setCurrentIndex(-1);
         }
     }
-    // 悬浮标签栏与内容标签页保持完全一致，并按当前页重新同步外部窗口显隐
-    syncFloatingTabBar();
-    tabIndexChanged(ui->tabWidget->currentIndex());
+    else if (ui->tabWidget->count() == 1)
+    {
+        // 只在第一个标签时切换到它；热更新追加标签时保持现场当前页面不变
+        ui->tabWidget->setCurrentIndex(0);
+    }
+    for (int i = 0; i < config.appList.count(); i++)
+    {
+        const bool matched = !app.id.isEmpty() ? (config.appList[i].id == app.id)
+                                               : (config.appList[i].appPath == app.appPath);
+        if (matched)
+        {
+            qDebug() << "app index = " << i + 1;
+            config.appList[i].tabIndex = ui->tabWidget->indexOf(widget);
+            break;
+        }
+    }
 }
 
 QString ExternalAppWindow::buildTabTitle(const AppConfig &app) const

@@ -1,11 +1,23 @@
 #ifndef PROCESSINFO_H
 #define PROCESSINFO_H
 
-#include <windows.h>
 #include <QProcess>
 #include <QString>
 #include <QWindow>
 #include <QtGlobal>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#else
+/**
+ * @brief 非 Windows 平台的窗口句柄占位类型
+ *
+ * ProcessInfo 被跨平台代码共用，Windows 下 hwnd 为真实的 HWND；
+ * 非 Windows（如银河麒麟）没有 HWND 概念，这里用整型占位，
+ * 避免无条件包含 windows.h 导致 Linux 下直接编译失败。
+ */
+typedef quintptr HWND;
+#endif
 
 struct ProcessInfo
 {

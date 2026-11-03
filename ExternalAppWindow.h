@@ -181,6 +181,109 @@ class ExternalAppWindow : public QMainWindow
      */
     void releaseAllApps();
 
+    /**
+     * @brief 第二阶段：按配置顺序创建网页标签，并收集待等待的外部程序与 PPT 下标
+     *
+     * 网页标签创建后立即处理一次事件循环，保证标签栏尽早刷新；
+     * 普通外部程序与 PPT 只记录下标，留到后续阶段并行等待 / 串行加载，
+     * 避免单个应用阻塞导致后面所有标签排队。
+     *
+     * @param isReload            是否为重新加载（重新加载时不重复预启动）
+     * @param pendingExternalIndexes 输出参数，窗口尚未就绪、需要并行等待的外部程序下标
+     * @param pptAppIndexes       输出参数，需要串行加载的 PPT 应用下标
+     */
+    void createTabsInConfigOrder(bool isReload, QVector<int> *pendingExternalIndexes, QVector<int> *pptAppIndexes);
+
+    /**
+     * @brief 第三阶段：并行等待待嵌入外部程序的窗口，并逐个嵌入标签页
+     * @param pendingExternalIndexes 待等待的应用下标集合
+     */
+    void embedPendingExternalApps(const QVector<int> &pendingExternalIndexes);
+
+    /**
+     * @brief 第四阶段：串行加载 PPT 应用
+     *
+     * PPT 通过 ActiveQt 调用 WPS/PowerPoint COM 接口，必须在主线程串行执行，
+     * 放到最后可避免放映窗口的启动耗时阻塞前面所有标签的创建。
+     *
+     * @param pptAppIndexes PPT 应用下标集合
+     */
+    void loadPptApps(const QVector<int> &pptAppIndexes);
+
+    /**
+     * @brief 批量加载结束后切回配置中的第一个应用
+     *
+     * 网页标签先建、外部程序与 PPT 后建，按就绪顺序插入会让当前页停在后建标签上，
+     * 这里统一归位到配置首项，避免启动后出现标签选中跳变。
+     *
+     * @param isReload 是否为重新加载（重新加载时保持现场选中项不变）
+     */
+    void selectFirstAppAfterLoad(bool isReload);
+
+    /**
+     * @brief chrome 专用嵌入：通过 Qt foreign window 包装后挂到标签页
+     * @param app         应用配置
+     * @param process     已探测到的进程信息
+     * @param insertIndex 标签插入位置
+     */
+    void embedChromeWindow(AppConfig &app, ProcessInfo &process, int insertIndex);
+
+    /**
+     * @brief 纯 Win32 方式嵌入普通桌面程序窗口
+     *
+     * 不使用 QWindow::fromWinId + createWindowContainer（实测会导致目标 Qt 程序崩溃），
+     * 而是把外部窗口直接设为标签页内原生宿主控件的子窗口，父子关系由 Windows 维护。
+     *
+     * @param app         应用配置
+     * @param process     已探测到的进程信息
+     * @param insertIndex 标签插入位置
+     */
+    void embedNativeWindow(AppConfig &app, ProcessInfo &process, int insertIndex);
+
+    /**
+     * @brief 初始化标签页内容控件的公共属性
+     *
+     * 统一设置尺寸、伸缩策略、深色占位底色与软件 id 属性，
+     * 供新增标签与替换标签两条路径共用，避免重复代码。
+     *
+     * @param widget 内容控件（宿主控件 / 网页视图 / PPT 容器）
+     * @param app    应用配置
+     */
+    void prepareTabPage(QWidget *widget, const AppConfig &app);
+
+    /**
+     * @brief 查找已存在同 id（或旧配置下同标签文本）的标签索引
+     * @param app      应用配置
+     * @param tabTitle 目标标签文本
+     * @return 标签索引，未找到返回 -1
+     */
+    int findExistingTabIndex(const AppConfig &app, const QString &tabTitle) const;
+
+    /**
+     * @brief 把已登记进程项的 tabName 同步为实际标签文本
+     * @param app      应用配置
+     * @param tabTitle 实际标签文本（含序号前缀）
+     */
+    void syncRegisteredTabName(const AppConfig &app, const QString &tabTitle);
+
+    /**
+     * @brief 用新控件原位替换指定索引的标签
+     * @param tabIndex 被替换的标签索引
+     * @param widget   新内容控件
+     * @param app      应用配置
+     * @param tabTitle 标签文本
+     */
+    void replaceTabAt(int tabIndex, QWidget *widget, AppConfig &app, const QString &tabTitle);
+
+    /**
+     * @brief 在指定位插入新标签
+     * @param widget      内容控件
+     * @param app         应用配置
+     * @param tabTitle    标签文本
+     * @param insertIndex 插入位置，小于 0 或越界时追加到末尾
+     */
+    void appendTab(QWidget *widget, AppConfig &app, const QString &tabTitle, int insertIndex);
+
     QScreen *defaultScreen = nullptr;
     QScreen *currentScreen = nullptr;
     QList<QScreen *> screenList;

@@ -65,6 +65,21 @@ QString windowClassOf(HWND hwnd)
     return QString::fromWCharArray(className);
 }
 
+/**
+ * @brief 按进程 ID 枚举顶层窗口的上下文
+ *
+ * 旧实现把进程 ID 强转成 HWND 存进 QVector<HWND> 的第 0 个槽位，再在回调里读回来，
+ * 属于“用指针槽携带整数”的取巧写法：语义混淆，且在 32 位环境下会被截断。
+ * 改为独立结构体同时携带目标 pid 与命中的窗口句柄列表，类型正确且可读。
+ */
+struct WindowEnumContext
+{
+    /** 目标进程 ID */
+    DWORD processId = 0;
+    /** 已命中的可见顶层窗口句柄 */
+    QVector<HWND> windows;
+};
+
 /** @brief 内核设备名与盘符的映射项，first 为设备名（如 \Device\HarddiskVolume3），second 为盘符（如 C:） */
 typedef QPair<QString, QString> DeviceDrivePair;
 
@@ -255,36 +270,38 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(const QString &processNam
 }
 QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(quint64 pid)
 {
-    QVector<HWND> processHwndList;
     QString processPath = getProcessPath(pid);
     // qDebug() << "pid = " << pid << ", processPath = " << processPath;
     QFileInfo fileInfo(processPath);
     QString processName = fileInfo.fileName();
 
-    processHwndList.append((HWND)pid);
-    //枚举所有顶层窗口
+    // 枚举该进程的全部可见顶层窗口：上下文结构体同时携带目标 pid 与结果列表，
+    // 不再把 pid 强转到 HWND 槽位里传递
+    WindowEnumContext context;
+    context.processId = static_cast<DWORD>(pid);
     EnumWindows(
         [](HWND hwnd, LPARAM lParam) -> BOOL {
             if (!IsWindowVisible(hwnd))
             {
                 return TRUE;
             }
-            DWORD windowProcessId;
-            QVector<HWND> *tmpHwndList = reinterpret_cast<QVector<HWND> *>(lParam);
-            //获取窗口所属进程ID
+            WindowEnumContext *context = reinterpret_cast<WindowEnumContext *>(lParam);
+            DWORD windowProcessId = 0;
             GetWindowThreadProcessId(hwnd, &windowProcessId);
-            quint64 targetPid = reinterpret_cast<quint64>((*tmpHwndList)[0]);
-            if (windowProcessId == targetPid)
+            if (windowProcessId == context->processId)
             {
-                tmpHwndList->append(hwnd);
+                context->windows.append(hwnd);
             }
             //继续枚举
             return TRUE;
         },
-        reinterpret_cast<LPARAM>(&processHwndList));
+        reinterpret_cast<LPARAM>(&context));
+
     QVector<ProcessInfo> processList;
-    if (processHwndList.count() == 1)
+    if (context.windows.isEmpty())
     {
+        // 进程存在但没有可见顶层窗口（例如残留的后台实例），返回仅含 pid 的登记项，
+        // 供调用方判断“进程存在但无界面”
         ProcessInfo processInfo;
         processInfo.hwnd = 0;
         processInfo.pid = pid;
@@ -294,9 +311,9 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(quint64 pid)
         return processList;
     }
 
-    for (int i = 1; i < processHwndList.count(); i++)
+    for (int i = 0; i < context.windows.size(); i++)
     {
-        HWND processHwnd = processHwndList[i];
+        HWND processHwnd = context.windows[i];
         if (processHwnd == nullptr || processHwnd == 0x0)
         {
             continue;
