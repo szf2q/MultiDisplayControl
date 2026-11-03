@@ -1,6 +1,7 @@
 #ifndef SOFTWARECAPTURE_H
 #define SOFTWARECAPTURE_H
 
+#include <QImage>
 #include <QString>
 #include <QStringList>
 
@@ -17,7 +18,7 @@ class QWidget;
  * 支持范围：
  *  - 桌面应用：直接启动可执行文件后抓取其窗口；
  *  - 演示文稿：通过 POWERPNT.EXE 打开文件后抓取其窗口；
- *  - 网页：需要 CEF 渲染进程配合，当前版本不生成预览图，回退显示类型图标。
+ *  - 网页：用内置 CEF 渲染一个临时窗口，加载完成后抓取页面首屏。
  *
  * 非 Windows 平台（如银河麒麟）没有通用窗口抓取手段，统一返回失败并回退类型图标。
  */
@@ -77,6 +78,23 @@ class SoftwareCapture
     static void removePreview(const QString &appDir, const QString &softwareId);
 
   private:
+    /**
+     * @brief 启动一次桌面应用或演示文稿并抓取其主窗口
+     * @param software      软件条目
+     * @param parent        进度提示父窗口
+     * @param detectedTitle 输出参数，可空
+     * @return 抓取到的图像，失败返回空图
+     */
+    static QImage captureLaunchedWindow(const SoftwareItem &software, QWidget *parent, QString *detectedTitle);
+
+    /**
+     * @brief 使用内置 CEF 渲染网页并抓取首屏画面
+     * @param software      软件条目，path 为网页地址
+     * @param detectedTitle 输出参数，可空；成功时写入网页标题
+     * @return 抓取到的图像，失败返回空图
+     */
+    static QImage captureWebPage(const SoftwareItem &software, QString *detectedTitle);
+
     /**
      * @brief 拆分命令行参数字符串（支持双引号包裹的参数）
      * @param args 原始参数字符串

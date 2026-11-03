@@ -1,13 +1,18 @@
 #include "SoftwareCapture.h"
 
+#include <QCefView.h>
+#include <QCursor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QImage>
+#include <QPixmap>
 #include <QProcess>
 #include <QProgressDialog>
+#include <QScreen>
 #include <QSet>
 #include <QStandardPaths>
 #include <QThread>
@@ -34,6 +39,13 @@ const int PREVIEW_MAX_WIDTH = 480;
 /** @brief 判定为有效主窗口的最小宽高，用于过滤提示条、输入法等小窗口 */
 const int MIN_WINDOW_WIDTH = 200;
 const int MIN_WINDOW_HEIGHT = 120;
+/** @brief 网页预览窗口尺寸：宽高足够渲染出完整首屏，最终会按预览图最大宽度等比缩小 */
+const int WEB_PREVIEW_WIDTH = 1280;
+const int WEB_PREVIEW_HEIGHT = 800;
+/** @brief 网页加载的最长等待时间（毫秒） */
+const int WEB_LOAD_TIMEOUT_MS = 15000;
+/** @brief 网页加载结束后的渲染稳定等待时间（毫秒） */
+const int WEB_RENDER_SETTLE_MS = 1200;
 
 /**
  * @brief EnumWindows 回调上下文：收集顶层窗口句柄
@@ -353,6 +365,44 @@ QImage grabWindowImage(HWND hwnd)
 }
 
 /**
+ * @brief 从屏幕上截取指定矩形区域
+ *
+ * CEF 使用 GPU 合成时 PrintWindow 可能返回空白，此时回退到屏幕拷贝。
+ *
+ * @param globalRect 待截取区域的屏幕坐标
+ * @return 截取结果，失败返回空图
+ */
+QImage grabScreenRegion(const QRect &globalRect)
+{
+    QScreen *screen = QGuiApplication::screenAt(globalRect.center());
+    if (screen == nullptr)
+    {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (screen == nullptr || globalRect.isEmpty())
+    {
+        return QImage();
+    }
+    const QPixmap screenPixmap = screen->grabWindow(0);
+    if (screenPixmap.isNull())
+    {
+        return QImage();
+    }
+    // 高 DPI 下窗口逻辑坐标与屏幕像素坐标存在缩放关系，需要按 devicePixelRatio 换算
+    const qreal ratio = screen->devicePixelRatio();
+    const QRect screenGeometry = screen->geometry();
+    QRect sourceRect(qRound((globalRect.x() - screenGeometry.x()) * ratio),
+                     qRound((globalRect.y() - screenGeometry.y()) * ratio), qRound(globalRect.width() * ratio),
+                     qRound(globalRect.height() * ratio));
+    sourceRect = sourceRect.intersected(screenPixmap.rect());
+    if (sourceRect.isEmpty())
+    {
+        return QImage();
+    }
+    return screenPixmap.copy(sourceRect).toImage();
+}
+
+/**
  * @brief 强制结束指定进程（若仍在运行）
  * @param pid 进程 id
  */
@@ -534,12 +584,50 @@ bool SoftwareCapture::capturePreview(const SoftwareItem &software, const QString
     {
         return false;
     }
+
+    // 网页走内置 CEF 渲染抓取，桌面应用/演示文稿走“启动进程 + 抓窗口”
+    QImage image;
+    if (software.type == QStringLiteral("web"))
+    {
+        image = captureWebPage(software, detectedTitle);
+    }
+    else
+    {
+        image = captureLaunchedWindow(software, parent, detectedTitle);
+    }
+
+    if (image.isNull())
+    {
+        return false;
+    }
+    if (image.width() > PREVIEW_MAX_WIDTH)
+    {
+        image = image.scaledToWidth(PREVIEW_MAX_WIDTH, Qt::SmoothTransformation);
+    }
+    if (!QDir().mkpath(previewDirectory(appDir)))
+    {
+        return false;
+    }
+    return image.save(absolutePreviewPath(appDir, software.id), "PNG");
+#else
+    // 非 Windows 平台没有通用窗口抓取手段，直接回退类型图标
+    Q_UNUSED(software)
+    Q_UNUSED(appDir)
+    Q_UNUSED(parent)
+    Q_UNUSED(detectedTitle)
+    return false;
+#endif
+}
+
+QImage SoftwareCapture::captureLaunchedWindow(const SoftwareItem &software, QWidget *parent, QString *detectedTitle)
+{
+#ifdef Q_OS_WIN
     QString program;
     QStringList arguments;
     QString workDir;
     if (!buildLaunchCommand(software, &program, &arguments, &workDir))
     {
-        return false;
+        return QImage();
     }
 
     // 抓图可能持续数秒，用无取消按钮的进度提示避免界面看起来卡死
@@ -556,7 +644,7 @@ bool SoftwareCapture::capturePreview(const SoftwareItem &software, const QString
     if (!QProcess::startDetached(program, arguments, workDir, &launchedPid))
     {
         progress.close();
-        return false;
+        return QImage();
     }
 
     HWND target = waitForNewWindow(static_cast<quint64>(launchedPid), existingWindows, software.windowTitle);
@@ -586,26 +674,97 @@ bool SoftwareCapture::capturePreview(const SoftwareItem &software, const QString
         }
     }
     progress.close();
-
-    if (image.isNull())
-    {
-        return false;
-    }
-    if (image.width() > PREVIEW_MAX_WIDTH)
-    {
-        image = image.scaledToWidth(PREVIEW_MAX_WIDTH, Qt::SmoothTransformation);
-    }
-    if (!QDir().mkpath(previewDirectory(appDir)))
-    {
-        return false;
-    }
-    return image.save(absolutePreviewPath(appDir, software.id), "PNG");
+    return image;
 #else
-    // 非 Windows 平台没有通用窗口抓取手段，直接回退类型图标
     Q_UNUSED(software)
-    Q_UNUSED(appDir)
     Q_UNUSED(parent)
     Q_UNUSED(detectedTitle)
-    return false;
+    return QImage();
+#endif
+}
+
+QImage SoftwareCapture::captureWebPage(const SoftwareItem &software, QString *detectedTitle)
+{
+#ifdef Q_OS_WIN
+    if (!software.path.startsWith(QStringLiteral("http://")) && !software.path.startsWith(QStringLiteral("https://")))
+    {
+        return QImage();
+    }
+
+    // 无边框置顶工具窗口承载真实 CEF 浏览器：当前 CEF 使用窗口模式（非离屏渲染），
+    // 浏览器窗口必须真实可见才能完成首帧绘制，否则抓到的只是空白画面。
+    QWidget holder(nullptr, Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint);
+    holder.setAttribute(Qt::WA_ShowWithoutActivating);
+    holder.setStyleSheet(QStringLiteral("background:#010A1B;"));
+    holder.resize(WEB_PREVIEW_WIDTH, WEB_PREVIEW_HEIGHT);
+    QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+    if (screen == nullptr)
+    {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (screen != nullptr)
+    {
+        const QRect available = screen->availableGeometry();
+        holder.move(available.x() + qMax(0, (available.width() - WEB_PREVIEW_WIDTH) / 2),
+                    available.y() + qMax(0, (available.height() - WEB_PREVIEW_HEIGHT) / 2));
+    }
+
+    bool loadFinished = false;
+    QCefView *cefView = new QCefView(software.path, nullptr, &holder);
+    cefView->setGeometry(holder.rect());
+    // 主框架加载结束或失败都视为可以抓图，避免一直等到超时
+    QObject::connect(cefView, &QCefView::loadEnd, cefView,
+                     [&loadFinished](const QCefBrowserId &, const QCefFrameId &, bool isMainFrame, int) {
+                         if (isMainFrame)
+                         {
+                             loadFinished = true;
+                         }
+                     });
+    QObject::connect(cefView, &QCefView::loadError, cefView,
+                     [&loadFinished](const QCefBrowserId &, const QCefFrameId &, bool isMainFrame, int, const QString &,
+                                     const QString &) {
+                         if (isMainFrame)
+                         {
+                             loadFinished = true;
+                         }
+                     });
+    if (detectedTitle != nullptr)
+    {
+        QObject::connect(cefView, &QCefView::titleChanged, cefView,
+                         [detectedTitle](const QString &title) { *detectedTitle = title; });
+    }
+    holder.show();
+
+    QElapsedTimer timer;
+    timer.start();
+    while (!loadFinished && timer.elapsed() < WEB_LOAD_TIMEOUT_MS)
+    {
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        QThread::msleep(80);
+    }
+    // 加载结束后再等待渲染进程完成首屏绘制，避免截到半透明或未排版完的画面
+    timer.restart();
+    while (timer.elapsed() < WEB_RENDER_SETTLE_MS)
+    {
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        QThread::msleep(80);
+    }
+
+    // 优先按窗口句柄后台抓取；CEF 走 GPU 合成时该方式可能得到空白图，再回退到屏幕拷贝
+    QImage image = grabWindowImage(reinterpret_cast<HWND>(cefView->winId()));
+    if (image.isNull() || isBlankImage(image))
+    {
+        holder.raise();
+        SetForegroundWindow(reinterpret_cast<HWND>(holder.winId()));
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        QThread::msleep(300);
+        image = grabScreenRegion(holder.frameGeometry());
+    }
+    holder.hide();
+    return image;
+#else
+    Q_UNUSED(software)
+    Q_UNUSED(detectedTitle)
+    return QImage();
 #endif
 }

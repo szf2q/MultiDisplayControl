@@ -123,7 +123,8 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     previewLabel->setText(QStringLiteral("暂无预览"));
     captureButton = new QPushButton(QStringLiteral("获取预览与窗口标题"), this);
     QLabel *previewHint = new QLabel(
-        QStringLiteral("选择路径后会自动运行一次程序，抓取第一个界面作为预览图，并自动填充窗口标题。"), this);
+        QStringLiteral("桌面应用/演示文稿会启动一次并抓取第一个界面；网页会加载地址后截取页面首屏。"
+                       "抓取成功后自动填充窗口标题。"), this);
     previewHint->setObjectName(QStringLiteral("hintLabel"));
     previewHint->setWordWrap(true);
 
@@ -196,8 +197,6 @@ void SoftwareEditDialog::onTypeChanged()
     const bool isWeb = (type == "web");
     browseButton->setEnabled(!isWeb);
     windowTitleEdit->setEnabled(!isWeb);
-    // 网页依赖 CEF 渲染进程，当前无法抓取预览，禁用抓取入口避免无效等待
-    captureButton->setEnabled(!isWeb);
     if (isWeb)
     {
         pathEdit->setPlaceholderText(QStringLiteral("https://example.com"));
@@ -242,17 +241,23 @@ void SoftwareEditDialog::onBrowse()
 void SoftwareEditDialog::onCapture()
 {
     const QString type = typeCombo->currentData().toString();
-    if (type == "web")
-    {
-        return;
-    }
     SoftwareItem probe;
     probe.id = m_item.id;
     probe.type = type;
     probe.path = pathEdit->text().trimmed();
     probe.startupArgs = startupArgsEdit->text().trimmed();
     probe.windowTitle = windowTitleEdit->text().trimmed();
-    if (probe.path.isEmpty() || !QFileInfo::exists(probe.path))
+    if (type == "web")
+    {
+        // 网页类型不需要检查本地文件，只校验地址格式
+        if (!probe.path.startsWith("http://") && !probe.path.startsWith("https://"))
+        {
+            QMessageBox::warning(this, QStringLiteral("生成预览"),
+                                 QStringLiteral("请先填写以 http:// 或 https:// 开头的网页地址。"));
+            return;
+        }
+    }
+    else if (probe.path.isEmpty() || !QFileInfo::exists(probe.path))
     {
         QMessageBox::warning(this, QStringLiteral("生成预览"), QStringLiteral("请先选择有效的软件路径。"));
         return;
@@ -270,8 +275,8 @@ void SoftwareEditDialog::onCapture()
     {
         QMessageBox::warning(
             this, QStringLiteral("生成预览"),
-            QStringLiteral("未能抓取到程序窗口。请确认程序可正常启动；若程序需要启动参数才显示窗口，"
-                           "可先填写启动参数后重新获取。"));
+            QStringLiteral("未能抓取到预览画面。桌面应用请确认程序可正常启动（需要启动参数才能显示窗口的，"
+                           "可先填写启动参数）；网页请确认地址可正常访问。"));
         return;
     }
 
