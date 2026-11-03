@@ -122,7 +122,9 @@ CONFIG(release, debug|release){
 #message("OUT_PWD = $$OUT_PWD")
 
 #指定目标文件（dll/so/exe）的存储路径
-DESTDIR = $$OUT_PWD/$$OUT_DIR
+# 统一输出到工程目录下的 release/debug 目录，便于直接部署与打包；
+# 中间产物（moc/obj/ui）仍保留在影子构建目录，避免污染源码树
+DESTDIR = $$PWD/$$OUT_DIR
 #指定moc_*.h/cpp文件的存储路径
 MOC_DIR = $$OUT_PWD/$$OUT_DIR/tmp
 #指定*.o文件的存储路径
