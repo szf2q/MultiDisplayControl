@@ -307,6 +307,14 @@ class ExternalAppWindow : public QMainWindow
      * 尺寸校正时需按窗口外框补偿这圈边框，才能让客户区正好等于宿主控件大小。
      */
     QSet<QWidget *> nativeFillClientHosts;
+    /**
+     * @brief 宿主控件对应的“外部程序自身假定的外框尺寸”
+     *
+     * Qt 程序会缓存创建窗口时的外框尺寸来换算内容区，跨进程去掉标题栏后它算出的内容区
+     * 会比真实客户区小一圈，底部露出宿主底色。这里按原外框尺寸把窗口放大，抵消这段差值。
+     * 非 Qt 程序不需要补偿，因此不会出现在该映射中。
+     */
+    QHash<QWidget *, QSize> nativeAppFrameSizes;
     /** @brief 外部窗口尺寸校正定时器，用于抵消鼠标拖动边框造成的尺寸变化 */
     QTimer *nativeHostFitTimer = nullptr;
     /** @brief 已通过 prestartApps() 拉起过的外部程序路径，避免重复启动 */

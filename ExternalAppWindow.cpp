@@ -12,20 +12,87 @@
 namespace
 {
     /**
+     * @brief 按指定窗口样式计算“外框尺寸减去客户区尺寸”的那圈边框大小
+     *
+     * @param style   窗口样式（GWL_STYLE）
+     * @param exStyle 扩展窗口样式（GWL_EXSTYLE）
+     * @return 外框相对客户区多出的宽高；计算失败时返回空尺寸
+     */
+    QSize calcWindowFrameSize(LONG_PTR style, LONG_PTR exStyle)
+    {
+        RECT frameRect;
+        frameRect.left = 0;
+        frameRect.top = 0;
+        frameRect.right = 0;
+        frameRect.bottom = 0;
+        if (AdjustWindowRectEx(&frameRect, static_cast<DWORD>(style), FALSE,
+                               static_cast<DWORD>(exStyle)) == FALSE)
+        {
+            return QSize();
+        }
+        return QSize(frameRect.right - frameRect.left, frameRect.bottom - frameRect.top);
+    }
+
+    /**
+     * @brief 判断外部窗口是否属于 Qt 程序
+     *
+     * Qt 在创建窗口时缓存了一份外框尺寸，之后一直用它把窗口外框尺寸换算成内容区尺寸，
+     * 不会再读真实客户区。我们跨进程去掉标题栏后，它按旧外框算出的内容区会比真实客户区
+     * 小一圈（实测 Qt5QWindowIcon 窗口少 2×25 像素），底部就露出宿主的底色黑条。
+     * 因此需要识别出这类窗口并单独补偿。
+     *
+     * @param hwnd 窗口句柄
+     * @return true 表示是 Qt 顶层窗口（类名形如 Qt5QWindowIcon / Qt6QWindowIcon）
+     */
+    bool isQtWindow(HWND hwnd)
+    {
+        wchar_t className[256] = {0};
+        if (GetClassNameW(hwnd, className, 256) <= 0)
+        {
+            return false;
+        }
+        const QString name = QString::fromWCharArray(className);
+        return name.startsWith(QStringLiteral("Qt5")) || name.startsWith(QStringLiteral("Qt6"));
+    }
+
+    /**
+     * @brief 让目标程序重新计算并缓存窗口外框（非客户区）尺寸
+     *
+     * 通过 SWP_FRAMECHANGED 让系统在目标进程内重新发送一次 WM_NCCALCSIZE，
+     * Qt 会借此用当前样式刷新自己缓存的外框尺寸（其窗口过程只在窗口不带
+     * WS_CHILD 时记录该尺寸）。因此调用前目标窗口必须仍是顶层窗口。
+     *
+     * @param hwnd 目标窗口句柄
+     */
+    void refreshWindowFrame(HWND hwnd)
+    {
+        if (hwnd == nullptr || IsWindow(hwnd) == FALSE)
+        {
+            return;
+        }
+        SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    }
+
+    /**
      * @brief 计算让客户区正好等于指定尺寸所需的窗口外框位置与大小
      *
      * 外部程序窗口保留 WS_THICKFRAME 时，外框比客户区大一圈可缩放边框；
      * 直接按客户区尺寸 MoveWindow 会让客户区四周留下黑边（底部最明显）。
      * 这里用 AdjustWindowRectEx 反算外框尺寸，并用负偏移把客户区原点对到宿主左上角。
      *
-     * @param hwnd       外部窗口句柄
-     * @param clientSize 期望的客户区尺寸
-     * @param x         输出：窗口相对宿主控件的位置 X
-     * @param y         输出：窗口相对宿主控件的位置 Y
-     * @param w         输出：窗口外框宽度
-     * @param h         输出：窗口外框高度
+     * @param hwnd         外部窗口句柄
+     * @param clientSize   期望的客户区尺寸
+     * @param appFrameSize 外部程序自身假定的外框尺寸（Qt 程序需要，其他程序传空）
+     * @param x           输出：窗口相对宿主控件的位置 X
+     * @param y           输出：窗口相对宿主控件的位置 Y
+     * @param w           输出：窗口外框宽度
+     * @param h           输出：窗口外框高度
+     * @note appFrameSize 非空时窗口会比宿主大一圈，多出的部分落在宿主之外被裁掉，
+     *       这样程序按自身外框换算出的内容区刚好铺满宿主控件。
      */
-    void calcClientFillingWindow(HWND hwnd, const QSize &clientSize, int *x, int *y, int *w, int *h)
+    void calcClientFillingWindow(HWND hwnd, const QSize &clientSize, const QSize &appFrameSize,
+                                 int *x, int *y, int *w, int *h)
     {
         *x = 0;
         *y = 0;
@@ -50,8 +117,14 @@ namespace
         // 客户区左上角就会正好落在 (0,0)，右下角正好等于宿主尺寸
         *x = frameRect.left;
         *y = frameRect.top;
-        *w = frameRect.right - frameRect.left;
-        *h = frameRect.bottom - frameRect.top;
+        const QSize realFrameSize(frameRect.right - frameRect.left, frameRect.bottom - frameRect.top);
+        const QSize effectiveFrameSize =
+            appFrameSize.isEmpty() || appFrameSize.width() < realFrameSize.width() ||
+                    appFrameSize.height() < realFrameSize.height()
+                ? realFrameSize
+                : appFrameSize;
+        *w = clientSize.width() + effectiveFrameSize.width();
+        *h = clientSize.height() + effectiveFrameSize.height();
     }
 }  // namespace
 
@@ -838,20 +911,31 @@ void ExternalAppWindow::embedNativeWindow(AppConfig &app, ProcessInfo &process, 
     // 避免目标程序仍按“最大化”重新计算几何
     ShowWindow(process.hwnd, SW_RESTORE);
     LONG_PTR style = GetWindowLongPtr(process.hwnd, GWL_STYLE);
+    const LONG_PTR originExStyle = GetWindowLongPtr(process.hwnd, GWL_EXSTYLE);
     style &= ~WS_MAXIMIZE;
     style &= ~WS_MINIMIZE;
-    style |= WS_CHILD;
-    // 默认保留目标窗口自身的边框与标题栏（WS_CAPTION / WS_BORDER），嵌入后外观与独立运行一致；
-    // 若配置开启“去掉边框”，则连同标题栏一起清除，让客户区铺满整块屏幕。
     // WS_CHILD 与 WS_POPUP 互斥，必须去掉弹出窗口标记
     style &= ~WS_POPUP;
     const bool stripBorder = config.stripAppBorder;
+    // Qt 程序自身缓存的外框尺寸：去掉标题栏后需要按它把窗口放大，抵消 Qt 算小的内容区
+    QSize appFrameSize;
     if (stripBorder)
     {
         // WS_CAPTION 本身包含 WS_BORDER 与 WS_DLGFRAME，一并清除后不再有非客户区占位
         style &= ~WS_CAPTION;
         style &= ~WS_BORDER;
+        // 关键时序：先在“仍是顶层窗口”的状态下写回新样式并让目标程序重算非客户区。
+        // Qt 仅在窗口不带 WS_CHILD 时才会依据 WM_NCCALCSIZE 更新缓存的外框尺寸；
+        // 若先加 WS_CHILD 再改尺寸，Qt 会继续用创建窗口时带标题栏的外框（实测 16x39）
+        // 换算内容区，内容区比真实客户区小 2x25 像素，底部因此露出宿主底色黑条。
+        SetWindowLongPtr(process.hwnd, GWL_STYLE, style);
+        if (isQtWindow(process.hwnd))
+        {
+            refreshWindowFrame(process.hwnd);
+            appFrameSize = calcWindowFrameSize(style, originExStyle);
+        }
     }
+    style |= WS_CHILD;
     // 注意：不要清除目标窗口的 WS_THICKFRAME（可缩放边框）来禁止拖拽调整尺寸。
     // 实测跨进程修改外部 Qt 程序的窗口样式后，该程序会在 Qt5Gui.dll 中崩溃（0xc0000005）。
     // 因此这里保持原有样式不变，改由周期定时器把被拖动过的窗口重新校正为铺满宿主控件。
@@ -873,7 +957,8 @@ void ExternalAppWindow::embedNativeWindow(AppConfig &app, ProcessInfo &process, 
     {
         // 去掉标题栏后仍保留 WS_THICKFRAME，外框自带一圈可缩放边框；
         // 需按客户区尺寸反算外框，并为客户区原点加负偏移，否则底部/右侧会露出黑边
-        calcClientFillingWindow(process.hwnd, rect.size(), &windowX, &windowY, &windowWidth, &windowHeight);
+        calcClientFillingWindow(process.hwnd, rect.size(), appFrameSize, &windowX, &windowY,
+                                &windowWidth, &windowHeight);
     }
     MoveWindow(process.hwnd, windowX, windowY, windowWidth, windowHeight, TRUE);
     // 隐藏状态下完成尺寸变更后，先让出主线程一小段时间并驱动事件循环，
@@ -898,11 +983,17 @@ void ExternalAppWindow::embedNativeWindow(AppConfig &app, ProcessInfo &process, 
         // 登记为“客户区铺满”窗口：定时器校正时按外框补偿那圈可缩放边框
         nativeFillClientHosts.insert(host);
     }
+    if (!appFrameSize.isEmpty())
+    {
+        // Qt 程序需要额外按它自身缓存的外框尺寸补偿，定时器校正时要用同一套算法
+        nativeAppFrameSizes.insert(host, appFrameSize);
+    }
     // 宿主控件销毁时立即摘掉映射：定时器每 200ms 遍历该映射，
     // 若保留已释放的控件指针会直接崩溃（标签被替换或热更新移除时都会发生）
     connect(host, &QObject::destroyed, this, [this, host]() {
         nativeHostWindows.remove(host);
         nativeFillClientHosts.remove(host);
+        nativeAppFrameSizes.remove(host);
     });
     host->installEventFilter(this);
     startNativeHostFitTimer();
@@ -1160,9 +1251,10 @@ bool ExternalAppWindow::eventFilter(QObject *watched, QEvent *event)
             int targetHeight = host->height();
             if (nativeFillClientHosts.contains(host))
             {
-                // 客户区铺满模式：按外框补偿可缩放边框，避免底部/右侧露出黑边
-                calcClientFillingWindow(childHwnd, host->size(), &targetX, &targetY, &targetWidth,
-                                        &targetHeight);
+                // 客户区铺满模式：按外框补偿可缩放边框，避免底部/右侧露出黑边；
+                // Qt 程序还要额外计入它自身缓存的外框尺寸
+                calcClientFillingWindow(childHwnd, host->size(), nativeAppFrameSizes.value(host),
+                                        &targetX, &targetY, &targetWidth, &targetHeight);
             }
             MoveWindow(childHwnd, targetX, targetY, targetWidth, targetHeight, TRUE);
         }
@@ -1203,8 +1295,8 @@ void ExternalAppWindow::startNativeHostFitTimer()
                 int targetY = 0;
                 int targetWidth = host->width();
                 int targetHeight = host->height();
-                calcClientFillingWindow(childHwnd, host->size(), &targetX, &targetY, &targetWidth,
-                                        &targetHeight);
+                calcClientFillingWindow(childHwnd, host->size(), nativeAppFrameSizes.value(host),
+                                        &targetX, &targetY, &targetWidth, &targetHeight);
                 const QPoint hostOrigin = host->mapToGlobal(QPoint(0, 0));
                 if (rect.right - rect.left != targetWidth || rect.bottom - rect.top != targetHeight ||
                     rect.left != hostOrigin.x() + targetX || rect.top != hostOrigin.y() + targetY)
