@@ -20,6 +20,7 @@ void GlobalKeyWatcher::registerHotkey()
     RegisterHotKey(nullptr, 11, MOD_ALT, 'H');
     RegisterHotKey(nullptr, 20, MOD_ALT, 'Q');
     RegisterHotKey(nullptr, 21, MOD_ALT, VK_F4);
+    RegisterHotKey(nullptr, 22, MOD_ALT, VK_F5);
     RegisterHotKey(nullptr, 31, MOD_ALT, VK_NUMPAD1);
     RegisterHotKey(nullptr, 32, MOD_ALT, VK_NUMPAD2);
     RegisterHotKey(nullptr, 33, MOD_ALT, VK_NUMPAD3);
@@ -68,6 +69,13 @@ bool GlobalKeyWatcher::nativeEventFilter(const QByteArray &eventType, void *mess
             QString tmpKey = (msg->wParam == 20 ? "Q" : "F4");
             qDebug() << "组合键Alt+" << tmpKey << "触发";
             emit quitKeyPressed("ALT+" + tmpKey);
+            return true;
+        }
+        else if (msg->wParam == 22)
+        {
+            // ALT+F5：重新加载鼠标所在屏幕的全部应用，用于单个屏幕的故障恢复
+            qDebug() << "组合键Alt+F5触发";
+            emit altAndF5Pressed();
             return true;
         }
         else if (msg->wParam >= 31 && msg->wParam <= 47)

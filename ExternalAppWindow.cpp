@@ -394,6 +394,93 @@ void ExternalAppWindow::readLoadApps()
     loadApps(true);
 }
 
+void ExternalAppWindow::reloadApps()
+{
+    if (config.debugMode)
+    {
+        qDebug() << "reload apps, debug mode, skip";
+        return;
+    }
+    qDebug() << "reload apps of screen " << config.screenIndex;
+    // 按配置顺序逐个重载，保证标签页顺序与配置一致
+    for (int i = 0; i < config.appList.size(); i++)
+    {
+        reloadApp(config.appList[i]);
+    }
+    // 只保留极短间隔让 Qt 处理一次布局，与 loadApps() 保持一致
+    Sleep(200);
+    if (ui->tabWidget->count() <= 0)
+    {
+        this->hide();
+        return;
+    }
+    // 重载后重新同步当前标签对应窗口的显隐与尺寸，避免残留旧标签的显示状态
+    if (tabBar->currentIndex() >= 0)
+    {
+        tabIndexChanged(tabBar->currentIndex());
+    }
+}
+
+void ExternalAppWindow::reloadApp(AppConfig &app)
+{
+    // 网页：新建 CefWebView，由 addWindowToTabWidget 原地替换同名标签（旧视图随之销毁）
+    if (app.appPath.startsWith("http://") || app.appPath.startsWith("https://"))
+    {
+        loadWebPage(app);
+        return;
+    }
+    // PPT：放映窗口由 COM 实例承载，重新加载会与现有放映实例冲突并可能产生重复放映，故保持不变
+    if (app.appPath.contains(".ppt"))
+    {
+        qDebug() << "reload skip ppt app, path = " << app.appPath;
+        return;
+    }
+    // 外部程序：先结束旧进程并清理映射，再走常规“启动 → 查找窗口 → 嵌入”流程
+    stopExternalApp(app);
+    // 清理预启动/失败标记，避免上一次的失败记录导致本次重载被直接跳过
+    prestartedAppPaths.remove(app.appPath);
+    failedAppPaths.remove(app.appPath);
+    startExternalProgram(app, false);
+}
+
+void ExternalAppWindow::stopExternalApp(AppConfig &app)
+{
+    // 倒序遍历，便于安全移除元素
+    for (int i = externalAppList.size() - 1; i >= 0; i--)
+    {
+        ProcessInfo info = externalAppList[i];
+        if (info.processPath != app.appPath)
+        {
+            continue;
+        }
+        // 先移除宿主控件到窗口句柄的映射：宿主控件会在标签替换时被销毁，
+        // 若保留映射，尺寸校正定时器会访问已释放的控件而崩溃
+        for (QHash<QWidget *, WId>::iterator it = nativeHostWindows.begin(); it != nativeHostWindows.end();)
+        {
+            if (it.value() == (WId)info.hwnd)
+            {
+                it = nativeHostWindows.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+        if (info.pid > 0)
+        {
+            qDebug() << "reload, kill " << info.processName << ", pid = " << info.pid;
+            processUtils->killProcess(info.pid);
+        }
+        // chrome 使用 QWindow::fromWinId 方式嵌入，需要显式释放该包装对象
+        if (info.externalWindow != nullptr)
+        {
+            info.externalWindow->close();
+            delete info.externalWindow;
+        }
+        externalAppList.remove(i);
+    }
+}
+
 void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
 {
     if (!isReload)
@@ -720,7 +807,14 @@ void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app)
     }
     if (findTabIndex >= 0)
     {
+        // 取出旧控件后再移除标签：QTabWidget::removeTab 只是解除管理、不会销毁控件，
+        // 重载时若不显式释放，旧的网页视图或宿主控件会一直残留在内存中
+        QWidget *oldWidget = ui->tabWidget->widget(findTabIndex);
         ui->tabWidget->removeTab(findTabIndex);
+        if (oldWidget != nullptr)
+        {
+            oldWidget->deleteLater();
+        }
         ui->tabWidget->insertTab(findTabIndex, widget, tabTitle);
         // 同步维护悬浮标签栏，避免 ui->tabWidget 与 tabBar 的标签数量/顺序不一致导致切页索引错位
         if (findTabIndex < tabBar->count())

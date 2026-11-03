@@ -23,6 +23,7 @@ class GlobalKeyWatcher : public QObject, public QAbstractNativeEventFilter
   signals:
     void switchScreenKeyPressed(const int &screenIndex, const QString &keyMessage);
     void quitKeyPressed(const QString &keyMessage);
+    /** @brief Alt+F5 被按下，用于重新加载鼠标所在屏幕的全部应用 */
     void altAndF5Pressed(void);
     void altAndRPressed(void);
     /** @brief Alt+H 被按下，用于弹出快捷键说明界面 */

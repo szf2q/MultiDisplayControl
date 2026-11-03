@@ -10,6 +10,7 @@
 #include <QVector>
 #include <QCefConfig.h>
 #include <QCefContext.h>
+#include <QCursor>
 #include <QtConcurrent/QtConcurrent>
 #include "ExternalAppWindow.h"
 #include "GlobalKeyWatcher.h"
@@ -248,6 +249,56 @@ void reloadScreenWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWin
     });
 }
 
+/**
+ * @brief 重新加载鼠标所在屏幕的全部应用
+ * @param winList 屏幕序号到窗口对象的映射
+ *
+ * 以鼠标位置确定目标屏幕，再找到当前位于该屏幕上的窗体并重载其全部应用。
+ * 这样某个屏幕上的应用崩溃或界面异常时，只需把鼠标移到该屏幕按 Alt+F5 即可单独恢复，
+ * 不必重启整个控制程序；鼠标位置在切换屏幕后依然有效（窗体随目标屏幕移动）。
+ */
+void reloadCurrentScreen(QMap<QString, ExternalAppWindow *> &winList)
+{
+    QScreen *screen = QGuiApplication::screenAt(QCursor::pos());
+    if (screen == nullptr)
+    {
+        screen = QGuiApplication::primaryScreen();
+    }
+    if (screen == nullptr)
+    {
+        qDebug() << "reload current screen failed, screen is null";
+        return;
+    }
+    for (QMap<QString, ExternalAppWindow *>::iterator it = winList.begin(); it != winList.end(); ++it)
+    {
+        ExternalAppWindow *win = it.value();
+        if (win == nullptr || win->isHidden())
+        {
+            continue;
+        }
+        if (win->getCurrentScreen() == screen)
+        {
+            qDebug() << "reload current screen, window title = " << win->windowTitle();
+            win->reloadApps();
+            return;
+        }
+    }
+    qDebug() << "reload current screen failed, no window on screen: " << screen->geometry();
+}
+
+/**
+ * @brief 注册 Alt+F5 快捷键的响应：重新加载鼠标所在屏幕的全部应用
+ * @param watcher 全局热键监听器
+ * @param winList 屏幕序号到窗口对象的映射
+ */
+void reloadCurrentScreenWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
+{
+    QObject::connect(&watcher, &GlobalKeyWatcher::altAndF5Pressed, [&winList]() {
+        qDebug() << "捕获到组合键: Alt + F5，重新加载鼠标所在屏幕的应用";
+        reloadCurrentScreen(winList);
+    });
+}
+
 void closeAppsWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
 {
     QObject::connect(&watcher, &GlobalKeyWatcher::quitKeyPressed, [&winList](const QString &keyMessage) {
@@ -369,6 +420,7 @@ int main(int argc, char *argv[])
         closeUndesiredWindowTimer(timer);
         screenSwitchWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         reloadScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
+        reloadCurrentScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         closeAppsWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         shortcutHelpWatcher(GlobalKeyWatcher::watcher, shortcutHelpDialog);
 

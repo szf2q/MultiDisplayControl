@@ -53,6 +53,14 @@ class ExternalAppWindow : public QMainWindow
     void loadApps(bool isReload = false);
     void readLoadApps();
     /**
+     * @brief 重新加载本屏幕的全部应用（故障恢复用）
+     *
+     * 按配置顺序逐个重载：外部程序先结束旧进程再重新启动并嵌入，网页重建视图并重新加载，
+     * PPT 放映由 COM 实例承载、重载会与现有放映冲突，故保持不变。
+     * 用于某个屏幕上的应用崩溃或界面异常时，仅恢复该屏幕，而不必重启整个控制程序。
+     */
+    void reloadApps();
+    /**
      * @brief 预启动本屏所有外部程序（不等待窗口出现，幂等）
      *
      * loadApps() 内部会按配置顺序逐个“启动进程 → 等待窗口出现 → 嵌入标签页”，
@@ -112,6 +120,16 @@ class ExternalAppWindow : public QMainWindow
     void tabIndexChanged(int tabIndex);
     void displayScreenIndex();
     void startExternalProgram(AppConfig &app, bool isReload = false);
+    /**
+     * @brief 重新加载单个应用（供 reloadApps() 调用）
+     * @param app 应用配置
+     */
+    void reloadApp(AppConfig &app);
+    /**
+     * @brief 结束某个应用对应的外部进程，并清理其窗口句柄与宿主控件映射
+     * @param app 应用配置，按进程路径匹配本屏已登记的外部进程
+     */
+    void stopExternalApp(AppConfig &app);
     bool startProcess(AppConfig &app);
     ProcessInfo findProcessInfo(AppConfig &app);
     /**
