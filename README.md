@@ -6,25 +6,25 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 
 支持嵌入的展示内容分三类：
 
-| 类型 | 判定条件（config.ini 中的 `app_N_path`） | 实现方式 |
+| 类型 | 判定条件（`config.json` 中的 `software[].path`） | 实现方式 |
 | --- | --- | --- |
-| 桌面应用程序 | 普通本地可执行文件路径（如 `xxx.exe`） | 以管理员身份启动进程，抓取目标窗口句柄（HWND），通过 `QWidget::createWindowContainer` 把外部窗口重设父窗口后嵌入本程序 |
+| 桌面应用程序 | 普通本地可执行文件路径（如 `xxx.exe`） | 以当前用户权限启动进程（不会弹 UAC 提权），抓取目标窗口句柄（HWND），通过纯 Win32 `SetParent` 把外部窗口嵌入本程序 |
 | 网页 | 以 `http://` 或 `https://` 开头 | 使用 `QCefView`（CEF 109 内核）加载，全进程共用 `cefCache` 缓存目录 |
-| PPT 演示文稿 | 路径中包含 `.ppt` | 通过 ActiveQt（`QAxWidget`）调用 WPS(`KWPP.Application`) 或 PowerPoint(`PowerPoint.Application`) COM 接口，循环全屏放映后嵌入放映窗口 |
+| PPT 演示文稿 | 扩展名为 `.ppt` / `.pptx` / `.pps` / `.ppsx` | 通过 ActiveQt（`QAxWidget`）调用 WPS(`KWPP.Application`) 或 PowerPoint(`PowerPoint.Application`) COM 接口，循环全屏放映后嵌入放映窗口 |
 
 每个屏幕窗口内部以 `QTabWidget` 承载多个应用，程序启动时自动完成启动、定位、嵌入、全屏等全部操作。
 
 ## 2. 功能特性
 
 - **多屏全屏布局**：按屏幕几何位置（或主屏优先）排序，自动把配置中的第 N 号窗口放到第 N 块屏幕上，无边框全屏展示。
-- **可视化管理界面**：`Alt+M` 全屏显示/隐藏管理窗口，支持软件清单管理（桌面程序/网页/PPT，清单内直接显示软件预览缩略图）、屏幕数量与布局管理、拖拽分配软件到屏幕、同屏多软件调整标签顺序；保存后立即热应用，无需重启。新增或编辑软件时可自动运行一次目标程序，抓取第一个界面作为预览图（保存在 `previews/` 目录）并自动填充窗口标题；网页因需要 CEF 渲染进程配合暂不生成预览，回退显示类型图标。
+- **可视化管理界面**：`Alt+M` 全屏显示/隐藏管理窗口，支持软件清单管理（桌面程序/网页/PPT，清单内直接显示软件预览缩略图）、屏幕数量与布局管理、拖拽分配软件到屏幕、同屏多软件调整标签顺序；保存后立即热应用，无需重启。新增或编辑软件时可自动运行一次目标程序，抓取第一个界面作为预览图（保存在 `previews/` 目录）并自动填充窗口标题；网页通过临时 CEF 窗口抓取首帧生成预览，PPT 通过 COM 导出第一页。
 - **配置单文件**：`config.json` 是唯一的数据源，保存时自动备份为 `config.json.bak`；不再写出 `config.ini`，仅在 `config.json` 不存在（旧部署升级）时从旧版 `config.ini` 导入一次并另存为 `config.json`。
 - **屏幕序号标识**：可在每块屏幕右上角浮层显示屏幕编号（`show_index`），标签页标题同时带上屏幕序号，主屏以 `*` 前缀标识。
 - **全局热键切换**：`Alt+数字` 可在屏幕之间"对调"显示内容，`Alt+R` 一键复位到默认屏幕，`Alt+F5` 只重新加载鼠标所在屏幕当前标签页的应用（不切换标签），`Alt+Tab` / `Alt+Shift+Tab` 循环切换鼠标所在屏幕的标签页，`Alt+Q` / `Alt+F4` 退出。
 - **悬浮标签栏**：屏幕顶部提供独立置顶的 `QTabBar`（可通过 `tab_offset_x` 微调水平位置），点击即可切换当前屏幕显示的应用。
-- **外部窗口嵌入**：通过 Win32 窗口样式改写（`WS_CHILD`，去掉标题栏/边框/弹出属性）+ `QWindow::fromWinId` 实现外部 exe 的嵌入与显隐控制。
-- **管理员权限自提升**：`runas_administrator=true` 时，若当前非管理员，则通过 `ShellExecuteEx(runas)` 重新以管理员身份启动自身并退出原进程（被嵌入的应用需要通过 `startDetached("runas")` 启动）。
-- **PPT 自动放映**：启动前自动结束 WPS 相关进程（`wps.exe`、`wpp.exe`、`wpscloudsvr.exe`、`wpsupdate.exe`）避免冲突，放映过程带 100ms 轮询守护，放映结束会自动重新开始，实现无限循环。
+- **外部窗口嵌入**：普通桌面程序通过 Win32 窗口样式改写（`WS_CHILD`，保留自身标题栏/边框）+ `SetParent` 嵌入；Chrome 窗口仍使用 `QWindow::fromWinId` 包装。
+- **管理员权限自提升**：`runas_administrator=true` 时，若当前非管理员，则通过 `ShellExecuteEx(runas)` 重新以管理员身份启动自身并退出原进程。被嵌入的外部应用始终以当前用户权限启动，不会单独弹 UAC。
+- **PPT 自动放映**：启动时只清理没有可见窗口的 WPS 残留实例（`wps.exe`、`wpp.exe`），不会结束用户正在编辑的文档；放映过程带 50ms 轮询守护，放映结束会自动重新开始，实现无限循环。
 - **Chrome 弹窗清理**：每 500ms 扫描一次 `chrome.exe` 窗口，自动关闭"翻译此页""无法更新 Chrome""要恢复页面吗"等干扰窗口及 `Chrome_SystemMessageWindow` 类窗口。
 - **网页调试**：可在 `main.cpp` 中通过 `cefConfig.setRemoteDebuggingPort(9222)` 打开 CEF 远程调试（默认关闭），通过 `http://127.0.0.1:9222` 调试嵌入网页。
 - **调试模式**：`debug_mode=true` 时不启动任何应用，仅生成占位标签页显示屏幕序号与屏幕几何信息，并在窗口中保留标签栏，便于排查屏幕映射关系。
@@ -70,7 +70,6 @@ MultiDisplayControl/
 ├── CustomWidget.h               # 焦点进入时激活外部窗口的 QWidget
 ├── resource.qrc                 # 资源清单（qss 样式、图标、图片）
 ├── qss/                         # dark.css 主题及配套图标资源
-├── app.manifest                 # Windows 应用程序清单
 ├── MultiDisplayControl_zh_CN.ts # 中文翻译文件
 ├── release/                     # 编译输出目录（含 Qt 运行库、config.json、cache 等）
 └── debug/                       # 调试编译输出目录（由构建生成）
@@ -109,9 +108,9 @@ MultiDisplayControl/
 - `initWindow()`：按 `sort_screen` 对 `QGuiApplication::screens()` 排序（主屏排到最后），确定本窗口的**默认屏幕** `defaultScreen` 及是否为主屏 `isPrimaryScreen`。
 - `setScreen(QScreen*, force)`：把窗口移动到目标屏幕并 `showFullScreen()`，同时同步外部窗口几何尺寸、悬浮标签栏位置和屏幕序号浮层位置。
 - `setToDefaultScreen()` / `getDefaultScreen()` / `getCurrentScreen()`：默认屏幕复位与查询，供热键切换逻辑使用。
-- `loadApps(bool isReload)`：先并行预启动本屏所有外部程序，再按配置顺序分派到 `loadWebPage()`、`startAndPlayPpt()`、`startExternalProgram()`；结束后初始化标签栏，若无可展示内容则隐藏窗口。
+- `loadApps(bool isReload)`：四阶段加载——并行预启动本屏外部程序 → 按配置顺序创建网页标签并登记待等待的外部程序 → 并行等待窗口就绪并嵌入 → 最后串行加载 PPT；结束后归位到配置首项并初始化标签栏，若无可展示内容则隐藏窗口。
 - `reloadCurrentTab()`：故障恢复用，只重载当前选中的标签页——外部程序先结束旧进程再重新启动并原地替换标签，网页重建 `CefWebView` 并重新加载，PPT 放映保持不变（避免与现有 COM 放映实例冲突）；同屏其它标签页不受影响。
-- `startExternalProgram()` / `findProcessInfo()` / `startProcess()`：启动外部程序（管理员权限）→ 轮询 `getProcessInfo(进程名, 窗口标题)` 直至稳定命中窗口（最多 30s，命中后连续确认 3 次）→ 以宿主控件嵌入标签页。
+- `startExternalProgram()` / `findProcessInfo()` / `startProcess()`：以当前用户权限启动外部程序 → 优先按 exe 路径定位窗口（进程名 + 标题匹配兜底），轮询直至稳定命中窗口（命中后连续确认 3 次）→ 以宿主控件嵌入标签页。
 - `loadWebPage()`：通过 `CefWebView`（QCefView/CEF 109）加载网页，全进程共用 `<exe目录>/cefCache` 缓存目录。
 - `startAndPlayPpt()` / `playPpt()`：通过 COM 自动选择 WPS 或 PowerPoint，配置循环放映参数（`LoopUntilStopped`、`AdvanceMode=1` 等）后 `Run()`，并轮询守护放映窗口，嵌入到标签页。
 - `tabIndexChanged()`：标签切换时展示对应外部窗口、隐藏其余窗口；Chrome 窗口额外通过 `ShowWindow()` 同步显隐。
@@ -124,10 +123,10 @@ MultiDisplayControl/
 进程操作的抽象接口与 Windows 实现，由 `ProcessFactory::newInstance()` 按平台创建。
 
 - `runAsAdministrators()`：检查当前进程是否属于管理员组，不是则 `ShellExecuteEx(runas)` 重新启动自身；返回 `>=0` 表示应退出当前进程。
-- `getProcessInfo(进程名)`：调用 `tasklist` 过滤镜像名获取 PID，再按 PID 枚举其可见顶层窗口。
+- `getProcessInfo(进程名)`：通过 Toolhelp32 进程快照按镜像名匹配 PID（不再调用 `tasklist` 子进程），再按 PID 枚举其可见顶层窗口。
 - `getProcessInfo(进程名, 窗口标题)` / `getProcessInfoByWindowTitle(标题)`：通过 `EnumWindows` 枚举可见顶层窗口并按标题模糊匹配。
 - `getProcessPath(pid)`：`OpenProcess` + `GetProcessImageFileName`，并把 `\Device\HarddiskVolume` 形式的路径转换为盘符路径。
-- `startProcess(路径, 参数, runAsAdmin)`：需要提权时使用 `startDetached("runas")`；Chrome 启动前会移除 `__COMPAT_LAYER`、`RunAsInvoker` 环境变量；启动后最多等待 5s 确认进程已存在。
+- `startProcess(路径, 参数, runAsAdmin)`：以当前用户权限分离启动进程（`runAsAdmin` 参数当前不生效，也不会弹 UAC）；Chrome 启动前会移除 `__COMPAT_LAYER`、`RunAsInvoker` 环境变量；启动后最多等待 5s 确认进程已存在。
 - `killProcess(...)`：支持按 `QProcess` 对象、PID、进程名三种方式结束进程。
 
 ### 6.3 `GlobalKeyWatcher`（[GlobalKeyWatcher.cpp](file:///d:/sunzhenfeng/projects/MultiDisplayControl/GlobalKeyWatcher.cpp)）
@@ -281,8 +280,8 @@ make            # Windows + MinGW 使用 mingw32-make；MSVC 使用 nmake / jom
 ## 11. 已知问题与注意事项
 
 - **Chrome 窗口隐藏后无法重新显示**：`tabIndexChanged()` 中已标注 `TODO`，隐藏后的 Chrome 窗口需依赖 `ShowWindow()` 恢复，存在不稳定性。
-- **Linux（银河麒麟）支持尚不完整**：`ProcessUtilsLinuxImpl.h` 仅有接口声明，缺少 `.cpp` 实现，且 `axcontainer`（ActiveQt）与 WebEngine 在 Linux 下的可用性需另行处理。
+- **外部程序提权未生效**：`startProcess()` 的 `runAsAdmin` 参数当前不生效，外部程序始终以当前用户权限启动（不弹 UAC）；如业务确需提权，须改用 `ShellExecuteEx` 的 `runas` 动词并接受每个应用一次 UAC 确认。
+- **Linux（银河麒麟）支持尚不完整**：`ProcessUtilsLinuxImpl.h` 仅有接口声明，缺少 `.cpp` 实现，且 `axcontainer`（ActiveQt）在 Linux 下的可用性需另行处理；经确认本期暂不考虑，留作后续独立任务。
 - **依赖 Win32 API**：窗口嵌入、窗口枚举、热键注册、进程路径转换等均基于 Windows API，跨平台移植需重写相关实现。
-- **`ProcessFactory.h` 中存在拼写错误**：非 Windows/Linux 分支的 `reutrn nullptr;` 应为 `return nullptr;`（该分支当前不会被编译）。
-- **启动耗时**：外部程序启动后需要轮询等待窗口出现（最多 30s），程序整体启动时间取决于被启动应用的响应速度。
-- **`.gitignore`** 会忽略 `*.exe`、`*.dll`，因此 `release/` 下的运行库需单独获取或手工保留。
+- **启动耗时**：外部程序启动后需要轮询等待窗口出现，程序整体启动时间取决于被启动应用的响应速度。
+- **`.gitignore`** 会忽略 `*.exe`、`*.dll`，`release/` 下的运行库属于部署产物，需通过 `git add -f` 显式维护。
