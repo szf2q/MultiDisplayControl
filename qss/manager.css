@@ -29,6 +29,13 @@ QLabel#hintLabel {
     font-size: 13px;
 }
 
+QLabel#previewImage {
+    background: #0e2440;
+    border: 1px solid #26507d;
+    border-radius: 8px;
+    color: #7f9dbd;
+}
+
 QLabel#dirtyLabel {
     color: #ffb648;
     font-size: 13px;

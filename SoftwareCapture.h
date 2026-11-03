@@ -60,12 +60,14 @@ class SoftwareCapture
      * 抓取过程可能持续数秒，内部会显示进度提示并周期性处理事件；
      * 抓取完成后会关闭本次启动的进程（若命中的是已在运行的窗口则不关闭）。
      *
-     * @param software 软件条目，需要 id、type、path、startupArgs、windowTitle 有效
-     * @param appDir   可执行文件所在目录，预览图会写入其 previews 子目录
-     * @param parent   进度提示的父窗口
+     * @param software          软件条目，需要 id、type、path、startupArgs、windowTitle 有效
+     * @param appDir            可执行文件所在目录，预览图会写入其 previews 子目录
+     * @param parent            进度提示的父窗口
+     * @param detectedTitle     输出参数，可选；抓取成功时写入目标窗口标题，用于自动填充窗口标题
      * @return true 表示抓取并保存成功
      */
-    static bool capturePreview(const SoftwareItem &software, const QString &appDir, QWidget *parent = nullptr);
+    static bool capturePreview(const SoftwareItem &software, const QString &appDir, QWidget *parent = nullptr,
+                               QString *detectedTitle = nullptr);
 
     /**
      * @brief 删除软件对应的预览图文件

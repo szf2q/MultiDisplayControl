@@ -522,9 +522,14 @@ bool SoftwareCapture::buildLaunchCommand(const SoftwareItem &software, QString *
     return true;
 }
 
-bool SoftwareCapture::capturePreview(const SoftwareItem &software, const QString &appDir, QWidget *parent)
+bool SoftwareCapture::capturePreview(const SoftwareItem &software, const QString &appDir, QWidget *parent,
+                                     QString *detectedTitle)
 {
 #ifdef Q_OS_WIN
+    if (detectedTitle != nullptr)
+    {
+        detectedTitle->clear();
+    }
     if (software.id.isEmpty())
     {
         return false;
@@ -570,6 +575,11 @@ bool SoftwareCapture::capturePreview(const SoftwareItem &software, const QString
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         bringWindowToFront(target);
         image = grabWindowImage(target);
+        if (detectedTitle != nullptr && !image.isNull())
+        {
+            // 抓图成功后回传窗口标题，供管理界面自动填充“窗口标题”
+            *detectedTitle = windowTitle(target);
+        }
         if (createdByUs)
         {
             closeLaunchedProcess(target, static_cast<quint64>(launchedPid));
@@ -595,6 +605,7 @@ bool SoftwareCapture::capturePreview(const SoftwareItem &software, const QString
     Q_UNUSED(software)
     Q_UNUSED(appDir)
     Q_UNUSED(parent)
+    Q_UNUSED(detectedTitle)
     return false;
 #endif
 }

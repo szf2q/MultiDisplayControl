@@ -8,6 +8,7 @@
 #include "ScreenConfig.h"
 
 class QComboBox;
+class QLabel;
 class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
@@ -28,7 +29,7 @@ class SoftwareEditDialog : public QDialog
   public:
     /**
      * @brief 构造函数
-     * @param item   待编辑的软件条目，新增时传入空条目
+     * @param item   待编辑的软件条目，新增时传入已生成 id 的空条目
      * @param all    现有软件清单，用于路径重复校验
      * @param parent 父窗口
      */
@@ -40,6 +41,21 @@ class SoftwareEditDialog : public QDialog
      */
     SoftwareItem result() const;
 
+    /**
+     * @brief 是否已经尝试过自动抓取预览图
+     *
+     * 调用方据此判断是否还需要在执行保存前补抓一次，避免重复启动目标程序。
+     *
+     * @return true 表示本次对话框中已尝试抓取（无论成功与否）
+     */
+    bool previewAttempted() const;
+
+  public slots:
+    /**
+     * @brief 取消对话框并清理本次新生成的预览图
+     */
+    void reject() override;
+
   private slots:
     /**
      * @brief 类型下拉框变化时切换“浏览”按钮状态与路径提示
@@ -47,9 +63,14 @@ class SoftwareEditDialog : public QDialog
     void onTypeChanged();
 
     /**
-     * @brief 浏览本地文件
+     * @brief 浏览本地文件，选择后自动抓取预览图与窗口标题
      */
     void onBrowse();
+
+    /**
+     * @brief 启动软件一次，抓取预览图并自动填充窗口标题
+     */
+    void onCapture();
 
     /**
      * @brief 校验并接受对话框
@@ -57,10 +78,22 @@ class SoftwareEditDialog : public QDialog
     void onAccept();
 
   private:
+    /**
+     * @brief 把当前软件条目的预览图加载到预览区域
+     */
+    void loadPreviewImage();
+
+  private:
     /** 待编辑条目（保存 id 等调用方字段） */
     SoftwareItem m_item;
     /** 现有软件清单，用于重复校验 */
     QList<SoftwareItem> m_all;
+    /** 是否为新增（id 由调用方预先生成，用于判断取消时是否需要清理预览图） */
+    bool m_isNewItem = false;
+    /** 本次是否已尝试抓取预览图 */
+    bool m_previewAttempted = false;
+    /** 本次是否成功生成预览图 */
+    bool m_previewGenerated = false;
 
     QComboBox *typeCombo = nullptr;
     QLineEdit *nameEdit = nullptr;
@@ -69,6 +102,8 @@ class SoftwareEditDialog : public QDialog
     QLineEdit *startupArgsEdit = nullptr;
     QLineEdit *remarkEdit = nullptr;
     QPushButton *browseButton = nullptr;
+    QLabel *previewLabel = nullptr;
+    QPushButton *captureButton = nullptr;
 };
 
 /**

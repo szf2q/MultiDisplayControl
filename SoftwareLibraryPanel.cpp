@@ -15,6 +15,7 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPixmap>
 #include <QPushButton>
 #include <QStyle>
 #include <QVBoxLayout>
@@ -77,10 +78,10 @@ namespace
 }  // namespace
 
 SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<SoftwareItem> &all, QWidget *parent)
-    : QDialog(parent), m_item(item), m_all(all)
+    : QDialog(parent), m_item(item), m_all(all), m_isNewItem(item.id.isEmpty())
 {
     setWindowTitle(item.id.isEmpty() ? QStringLiteral("新增软件") : QStringLiteral("编辑软件"));
-    setMinimumWidth(560);
+    setMinimumWidth(760);
 
     typeCombo = new QComboBox(this);
     typeCombo->addItem(QStringLiteral("桌面应用"), QStringLiteral("desktop"));
@@ -106,13 +107,34 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     remarkEdit = new QLineEdit(this);
     remarkEdit->setPlaceholderText(QStringLiteral("可选，仅用于备注说明"));
 
-    QFormLayout *form = new QFormLayout(this);
+    QFormLayout *form = new QFormLayout();
     form->addRow(QStringLiteral("类型"), typeCombo);
     form->addRow(QStringLiteral("名称"), nameEdit);
     form->addRow(QStringLiteral("路径/地址"), pathRow);
     form->addRow(QStringLiteral("窗口标题"), windowTitleEdit);
     form->addRow(QStringLiteral("启动参数"), startupArgsEdit);
     form->addRow(QStringLiteral("备注"), remarkEdit);
+
+    // ==================== 预览区域 ====================
+    previewLabel = new QLabel(this);
+    previewLabel->setObjectName(QStringLiteral("previewImage"));
+    previewLabel->setFixedSize(360, 200);
+    previewLabel->setAlignment(Qt::AlignCenter);
+    previewLabel->setText(QStringLiteral("暂无预览"));
+    captureButton = new QPushButton(QStringLiteral("获取预览与窗口标题"), this);
+    QLabel *previewHint = new QLabel(
+        QStringLiteral("选择路径后会自动运行一次程序，抓取第一个界面作为预览图，并自动填充窗口标题。"), this);
+    previewHint->setObjectName(QStringLiteral("hintLabel"));
+    previewHint->setWordWrap(true);
+
+    QVBoxLayout *previewSideLayout = new QVBoxLayout();
+    previewSideLayout->addWidget(captureButton);
+    previewSideLayout->addWidget(previewHint);
+    previewSideLayout->addStretch(1);
+
+    QHBoxLayout *previewLayout = new QHBoxLayout();
+    previewLayout->addWidget(previewLabel);
+    previewLayout->addLayout(previewSideLayout, 1);
 
     QHBoxLayout *buttons = new QHBoxLayout();
     buttons->addStretch(1);
@@ -121,7 +143,13 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     okButton->setDefault(true);
     buttons->addWidget(cancelButton);
     buttons->addWidget(okButton);
-    form->addRow(buttons);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    mainLayout->addLayout(form);
+    mainLayout->addSpacing(6);
+    mainLayout->addLayout(previewLayout);
+    mainLayout->addSpacing(6);
+    mainLayout->addLayout(buttons);
 
     // 回填已有数据
     const int typeIndex = typeCombo->findData(item.type.isEmpty() ? QStringLiteral("desktop") : item.type);
@@ -135,14 +163,31 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     connect(typeCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
             [this](int) { onTypeChanged(); });
     connect(browseButton, &QPushButton::clicked, this, [this]() { onBrowse(); });
-    connect(cancelButton, &QPushButton::clicked, this, &QDialog::reject);
+    connect(captureButton, &QPushButton::clicked, this, [this]() { onCapture(); });
+    connect(cancelButton, &QPushButton::clicked, this, [this]() { reject(); });
     connect(okButton, &QPushButton::clicked, this, [this]() { onAccept(); });
     onTypeChanged();
+    loadPreviewImage();
 }
 
 SoftwareItem SoftwareEditDialog::result() const
 {
     return m_item;
+}
+
+bool SoftwareEditDialog::previewAttempted() const
+{
+    return m_previewAttempted;
+}
+
+void SoftwareEditDialog::reject()
+{
+    // 新增流程取消时，本次抓取的预览图没有配置引用，直接清理，避免留下孤儿文件
+    if (m_isNewItem && m_previewGenerated && !m_item.id.isEmpty())
+    {
+        SoftwareCapture::removePreview(QApplication::applicationDirPath(), m_item.id);
+    }
+    QDialog::reject();
 }
 
 void SoftwareEditDialog::onTypeChanged()
@@ -151,6 +196,8 @@ void SoftwareEditDialog::onTypeChanged()
     const bool isWeb = (type == "web");
     browseButton->setEnabled(!isWeb);
     windowTitleEdit->setEnabled(!isWeb);
+    // 网页依赖 CEF 渲染进程，当前无法抓取预览，禁用抓取入口避免无效等待
+    captureButton->setEnabled(!isWeb);
     if (isWeb)
     {
         pathEdit->setPlaceholderText(QStringLiteral("https://example.com"));
@@ -179,14 +226,81 @@ void SoftwareEditDialog::onBrowse()
         filter = QStringLiteral("演示文稿 (*.ppt *.pptx)");
     }
     const QString filePath = QFileDialog::getOpenFileName(this, QStringLiteral("选择文件"), pathEdit->text(), filter);
-    if (!filePath.isEmpty())
+    if (filePath.isEmpty())
     {
-        pathEdit->setText(filePath);
-        if (nameEdit->text().isEmpty())
-        {
-            nameEdit->setText(QFileInfo(filePath).completeBaseName());
-        }
+        return;
     }
+    pathEdit->setText(filePath);
+    if (nameEdit->text().isEmpty())
+    {
+        nameEdit->setText(QFileInfo(filePath).completeBaseName());
+    }
+    // 选好路径后立即运行一次程序，自动获取窗口标题并生成预览图
+    onCapture();
+}
+
+void SoftwareEditDialog::onCapture()
+{
+    const QString type = typeCombo->currentData().toString();
+    if (type == "web")
+    {
+        return;
+    }
+    SoftwareItem probe;
+    probe.id = m_item.id;
+    probe.type = type;
+    probe.path = pathEdit->text().trimmed();
+    probe.startupArgs = startupArgsEdit->text().trimmed();
+    probe.windowTitle = windowTitleEdit->text().trimmed();
+    if (probe.path.isEmpty() || !QFileInfo::exists(probe.path))
+    {
+        QMessageBox::warning(this, QStringLiteral("生成预览"), QStringLiteral("请先选择有效的软件路径。"));
+        return;
+    }
+    if (probe.id.isEmpty())
+    {
+        probe.id = ConfigStore::makeSoftwareId();
+        m_item.id = probe.id;
+    }
+
+    m_previewAttempted = true;
+    QString detectedTitle;
+    const bool ok = SoftwareCapture::capturePreview(probe, QApplication::applicationDirPath(), this, &detectedTitle);
+    if (!ok)
+    {
+        QMessageBox::warning(
+            this, QStringLiteral("生成预览"),
+            QStringLiteral("未能抓取到程序窗口。请确认程序可正常启动；若程序需要启动参数才显示窗口，"
+                           "可先填写启动参数后重新获取。"));
+        return;
+    }
+
+    m_previewGenerated = true;
+    if (type != "ppt" && !detectedTitle.isEmpty())
+    {
+        // 自动填充窗口标题；用户仍可改写成更稳定的标题前缀
+        windowTitleEdit->setText(detectedTitle);
+    }
+    loadPreviewImage();
+}
+
+void SoftwareEditDialog::loadPreviewImage()
+{
+    SoftwareItem probe = m_item;
+    probe.previewPath =
+        m_previewGenerated ? SoftwareCapture::relativePreviewPath(m_item.id) : m_item.previewPath;
+    const QString previewFile = SoftwareCapture::resolveExistingPreview(QApplication::applicationDirPath(), probe);
+    QPixmap pixmap(previewFile);
+    if (pixmap.isNull())
+    {
+        previewLabel->setPixmap(QPixmap());
+        previewLabel->setText(QStringLiteral("暂无预览"));
+        return;
+    }
+    previewLabel->setText(QString());
+    // 预览区域固定 360x200，等比缩放并留出少量内边距
+    previewLabel->setPixmap(pixmap.scaled(previewLabel->size() - QSize(10, 10), Qt::KeepAspectRatio,
+                                          Qt::SmoothTransformation));
 }
 
 void SoftwareEditDialog::onAccept()
@@ -195,6 +309,8 @@ void SoftwareEditDialog::onAccept()
     const QString name = nameEdit->text().trimmed();
     const QString path = pathEdit->text().trimmed();
     const QString windowTitle = windowTitleEdit->text().trimmed();
+    // 目标程序是否发生变化：变化后旧预览图不可再用，必须本次抓取成功才能保留
+    const bool targetChanged = (type != m_item.type) || (path != m_item.path);
 
     if (name.isEmpty())
     {
@@ -251,6 +367,17 @@ void SoftwareEditDialog::onAccept()
     m_item.windowTitle = windowTitle;
     m_item.startupArgs = startupArgsEdit->text().trimmed();
     m_item.remark = remarkEdit->text().trimmed();
+    // 记录当前可用的预览图：未换目标程序或本次抓取成功时写相对路径，否则留空回退类型图标
+    if (!targetChanged || m_previewGenerated)
+    {
+        const QString previewFile =
+            SoftwareCapture::resolveExistingPreview(QApplication::applicationDirPath(), m_item);
+        m_item.previewPath = previewFile.isEmpty() ? QString() : SoftwareCapture::relativePreviewPath(m_item.id);
+    }
+    else
+    {
+        m_item.previewPath.clear();
+    }
     if (m_item.type == "web" && m_item.windowTitle.isEmpty())
     {
         // 网页窗口标题仅用于展示，缺省时用名称补齐，便于运行时日志识别
@@ -398,16 +525,25 @@ void SoftwareLibraryPanel::onAdd()
     {
         return;
     }
+    // 预先生成 id：对话框内抓取的预览图按 id 命名，取消时可据 id 清理
     SoftwareItem software;
+    software.id = ConfigStore::makeSoftwareId();
     SoftwareEditDialog dialog(software, m_config->softwareList, this);
     if (dialog.exec() != QDialog::Accepted)
     {
         return;
     }
     software = dialog.result();
-    software.id = ConfigStore::makeSoftwareId();
-    // 新增软件时自动运行一次并抓取第一个界面作为预览图，失败则回退类型图标
-    generatePreview(&software);
+    if (!dialog.previewAttempted())
+    {
+        // 对话框中未抓取过预览图（例如手动输入路径后直接确定），这里补抓一次
+        generatePreview(&software);
+    }
+    else if (software.previewPath.isEmpty())
+    {
+        // 抓取失败时不再重复启动程序，保持无预览并回退类型图标
+        software.previewPath.clear();
+    }
     m_config->softwareList.append(software);
     refresh();
     selectSoftware(software.id);
@@ -435,12 +571,17 @@ void SoftwareLibraryPanel::onEdit()
     }
     *software = dialog.result();
     software->id = softwareId;
-    if (software->path != oldPath || software->type != oldType)
+    if (software->previewPath.isEmpty())
     {
-        // 目标程序变化后旧预览图已失效，先清理再重新抓取
-        SoftwareCapture::removePreview(QApplication::applicationDirPath(), softwareId);
-        software->previewPath.clear();
-        generatePreview(software);
+        if (software->path != oldPath || software->type != oldType)
+        {
+            // 目标程序变化且对话框内没有重新抓到图，旧预览已失效
+            SoftwareCapture::removePreview(QApplication::applicationDirPath(), softwareId);
+        }
+        if (!dialog.previewAttempted())
+        {
+            generatePreview(software);
+        }
     }
     refresh();
     selectSoftware(softwareId);

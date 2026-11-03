@@ -559,8 +559,7 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload, int 
     style &= ~WS_MAXIMIZE;
     style &= ~WS_MINIMIZE;
     style |= WS_CHILD;
-    style &= ~WS_CAPTION;
-    style &= ~WS_BORDER;
+    // 按要求保留目标窗口自身的边框与标题栏（WS_CAPTION / WS_BORDER），嵌入后外观与独立运行一致
     style &= ~WS_POPUP;
     // 注意：不要清除目标窗口的 WS_THICKFRAME（可缩放边框）来禁止拖拽调整尺寸。
     // 实测跨进程修改外部 Qt 程序的窗口样式后，该程序会在 Qt5Gui.dll 中崩溃（0xc0000005）。
@@ -735,8 +734,7 @@ void ExternalAppWindow::playPpt(QAxWidget *ppt, QAxObject *presentation, QAxObje
     QWidget *container = QWidget::createWindowContainer(pptWindow);
     LONG_PTR style = GetWindowLongPtr(process.hwnd, GWL_STYLE);
     style |= WS_CHILD;
-    style &= ~WS_CAPTION;
-    style &= ~WS_BORDER;
+    // 保留放映窗口自身的边框样式，仅去掉弹出窗口标记以作为子窗口嵌入
     style &= ~WS_POPUP;
     SetWindowLongPtr(process.hwnd, GWL_STYLE, style);
     //设置外部应用窗口的尺寸到最大
