@@ -394,31 +394,47 @@ void ExternalAppWindow::readLoadApps()
     loadApps(true);
 }
 
-void ExternalAppWindow::reloadApps()
+void ExternalAppWindow::reloadCurrentTab()
 {
     if (config.debugMode)
     {
-        qDebug() << "reload apps, debug mode, skip";
+        qDebug() << "reload current tab, debug mode, skip";
         return;
     }
-    qDebug() << "reload apps of screen " << config.screenIndex;
-    // 按配置顺序逐个重载，保证标签页顺序与配置一致
+    int tabIndex = tabBar->currentIndex();
+    if (tabIndex < 0)
+    {
+        tabIndex = ui->tabWidget->currentIndex();
+    }
+    if (tabIndex < 0 || tabIndex >= ui->tabWidget->count())
+    {
+        qDebug() << "reload current tab failed, invalid tab index = " << tabIndex;
+        return;
+    }
+    // 通过标签文本反查配置项：标签顺序与配置顺序一致，但应用启动失败时不会创建标签，
+    // 因此不能用下标直接对应 config.appList
+    const QString tabTitle = ui->tabWidget->tabText(tabIndex);
+    qDebug() << "reload current tab of screen " << config.screenIndex << ", tab = " << tabTitle;
     for (int i = 0; i < config.appList.size(); i++)
     {
+        QString expectTitle = config.appList[i].tabName;
+        if (config.showIndex)
+        {
+            expectTitle = QString("%1%2-%3")
+                              .arg(this->isPrimaryScreen ? "*" : "")
+                              .arg(config.screenIndex)
+                              .arg(config.appList[i].tabName);
+        }
+        if (expectTitle != tabTitle)
+        {
+            continue;
+        }
         reloadApp(config.appList[i]);
-    }
-    // 只保留极短间隔让 Qt 处理一次布局，与 loadApps() 保持一致
-    Sleep(200);
-    if (ui->tabWidget->count() <= 0)
-    {
-        this->hide();
+        // 重载只替换当前标签的控件，这里重新同步一次显隐与尺寸
+        tabIndexChanged(tabBar->currentIndex());
         return;
     }
-    // 重载后重新同步当前标签对应窗口的显隐与尺寸，避免残留旧标签的显示状态
-    if (tabBar->currentIndex() >= 0)
-    {
-        tabIndexChanged(tabBar->currentIndex());
-    }
+    qDebug() << "reload current tab failed, no app matched tab = " << tabTitle;
 }
 
 void ExternalAppWindow::reloadApp(AppConfig &app)

@@ -164,7 +164,7 @@ void ShortcutHelpDialog::buildUi()
     addShortcutRow(grid, 3, QStringLiteral("Alt + Q\nAlt + F4"),
                    textUtf8("关闭所有窗体并退出程序"));
     addShortcutRow(grid, 4, QStringLiteral("Alt + F5"),
-                   textUtf8("重新加载鼠标所在屏幕的全部应用，用于单个屏幕的故障恢复"));
+                   textUtf8("重新加载鼠标所在屏幕当前标签页的应用，其它标签页不受影响"));
 
     cardLayout->addLayout(grid);
     cardLayout->addStretch();

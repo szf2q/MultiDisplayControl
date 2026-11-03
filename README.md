@@ -18,7 +18,7 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 
 - **多屏全屏布局**：按屏幕几何位置（或主屏优先）排序，自动把配置中的第 N 号窗口放到第 N 块屏幕上，无边框全屏展示。
 - **屏幕序号标识**：可在每块屏幕右上角浮层显示屏幕编号（`show_index`），标签页标题同时带上屏幕序号，主屏以 `*` 前缀标识。
-- **全局热键切换**：`Alt+数字` 可在屏幕之间"对调"显示内容，`Alt+R` 一键复位到默认屏幕，`Alt+F5` 只重新加载鼠标所在屏幕的应用，`Alt+Q` / `Alt+F4` 退出。
+- **全局热键切换**：`Alt+数字` 可在屏幕之间"对调"显示内容，`Alt+R` 一键复位到默认屏幕，`Alt+F5` 只重新加载鼠标所在屏幕当前标签页的应用，`Alt+Q` / `Alt+F4` 退出。
 - **悬浮标签栏**：屏幕顶部提供独立置顶的 `QTabBar`（可通过 `tab_offset_x` 微调水平位置），点击即可切换当前屏幕显示的应用。
 - **外部窗口嵌入**：通过 Win32 窗口样式改写（`WS_CHILD`，去掉标题栏/边框/弹出属性）+ `QWindow::fromWinId` 实现外部 exe 的嵌入与显隐控制。
 - **管理员权限自提升**：`runas_administrator=true` 时，若当前非管理员，则通过 `ShellExecuteEx(runas)` 重新以管理员身份启动自身并退出原进程（被嵌入的应用需要通过 `startDetached("runas")` 启动）。
@@ -102,7 +102,7 @@ MultiDisplayControl/
 - `setScreen(QScreen*, force)`：把窗口移动到目标屏幕并 `showFullScreen()`，同时同步外部窗口几何尺寸、悬浮标签栏位置和屏幕序号浮层位置。
 - `setToDefaultScreen()` / `getDefaultScreen()` / `getCurrentScreen()`：默认屏幕复位与查询，供热键切换逻辑使用。
 - `loadApps(bool isReload)`：先并行预启动本屏所有外部程序，再按配置顺序分派到 `loadWebPage()`、`startAndPlayPpt()`、`startExternalProgram()`；结束后初始化标签栏，若无可展示内容则隐藏窗口。
-- `reloadApps()`：故障恢复用，按配置顺序重新加载本屏应用——外部程序先结束旧进程再重新启动并原地替换标签，网页重建 `CefWebView` 并重新加载，PPT 放映保持不变（避免与现有 COM 放映实例冲突）。仅影响本屏，无需重启整个控制程序。
+- `reloadCurrentTab()`：故障恢复用，只重载当前选中的标签页——外部程序先结束旧进程再重新启动并原地替换标签，网页重建 `CefWebView` 并重新加载，PPT 放映保持不变（避免与现有 COM 放映实例冲突）；同屏其它标签页不受影响。
 - `startExternalProgram()` / `findProcessInfo()` / `startProcess()`：启动外部程序（管理员权限）→ 轮询 `getProcessInfo(进程名, 窗口标题)` 直至稳定命中窗口（最多 30s，命中后连续确认 3 次）→ 以宿主控件嵌入标签页。
 - `loadWebPage()`：通过 `CefWebView`（QCefView/CEF 109）加载网页，全进程共用 `<exe目录>/cefCache` 缓存目录。
 - `startAndPlayPpt()` / `playPpt()`：通过 COM 自动选择 WPS 或 PowerPoint，配置循环放映参数（`LoopUntilStopped`、`AdvanceMode=1` 等）后 `Run()`，并轮询守护放映窗口，嵌入到标签页。
@@ -128,7 +128,7 @@ MultiDisplayControl/
 
 - `switchScreenKeyPressed(int screenIndex, QString keyMessage)` — `Alt + 1~7` / `Alt + 小键盘 1~7`
 - `altAndRPressed()` — `Alt + R`
-- `altAndF5Pressed()` — `Alt + F5`，重新加载鼠标所在屏幕的全部应用
+- `altAndF5Pressed()` — `Alt + F5`，重新加载鼠标所在屏幕当前标签页的应用
 - `quitKeyPressed(QString keyMessage)` — `Alt + Q` / `Alt + F4`
 - `helpKeyPressed()` — `Alt + H`，弹出/关闭快捷键说明浮层（置顶、无边框，点击浮层外部或按 Esc 关闭）
 
@@ -204,7 +204,7 @@ app_1_startup_args=
 | --- | --- |
 | `Alt+1` ~ `Alt+7`、`Alt+小键盘1` ~ `Alt+小键盘7` | 将第 N 号屏幕的内容切换到主屏显示（主屏与目标屏内容互换） |
 | `Alt+R` | 重新把所有窗口复位到各自的默认屏幕（不改变当前窗口内容） |
-| `Alt+F5` | 重新加载鼠标所在屏幕的全部应用（外部程序重启、网页重新加载），用于单个屏幕的故障恢复 |
+| `Alt+F5` | 重新加载鼠标所在屏幕当前标签页的应用（外部程序重启、网页重新加载），其它标签页不受影响 |
 | `Alt+H` | 显示/关闭快捷键说明浮层 |
 | `Alt+Q` / `Alt+F4` | 关闭所有窗口并退出程序 |
 
