@@ -4,8 +4,6 @@
 #include <QDebug>
 #include <QDir>
 #include <QMap>
-#include <QMessageBox>
-#include <QAbstractButton>
 #include <QNetworkProxyFactory>
 #include <QSharedPointer>
 #include <QTimer>
@@ -18,6 +16,7 @@
 #include "GlobalVariants.h"
 #include "IniConfiguration.h"
 #include "ScreenConfig.h"
+#include "ShortcutHelpDialog.h"
 MultiScreenConfig loadScreenConfig(QString path)
 {
     MultiScreenConfig config;
@@ -261,53 +260,13 @@ void closeAppsWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow
 }
 
 /**
- * @brief 弹出快捷键说明界面
- * @note 大屏窗体是无边框全屏窗口，普通对话框容易被压在后面，因此这里显式置顶（Qt::WindowStaysOnTopHint）；
- *       另用静态标志防止长按热键或连发时叠加弹出多个说明窗口（对话框 exec 期间仍会收到 WM_HOTKEY）。
- */
-void showShortcutHelpDialog()
-{
-    static bool isDialogShowing = false;
-    if (isDialogShowing)
-    {
-        return;
-    }
-    isDialogShowing = true;
-
-    QMessageBox box;
-    box.setWindowTitle(QStringLiteral("快捷键说明"));
-    box.setIcon(QMessageBox::Information);
-    box.setWindowFlag(Qt::WindowStaysOnTopHint, true);
-    box.setTextFormat(Qt::RichText);
-    box.setText(QStringLiteral(
-        "<p style='font-size:14px;'>快捷键在程序运行期间全局生效，无需先激活窗口。</p>"
-        "<table cellspacing='0' cellpadding='6' style='font-size:14px;'>"
-        "<tr><th align='left'>快捷键</th><th align='left'>功能</th></tr>"
-        "<tr><td><b>Alt + H</b></td><td>显示本快捷键说明（回车 / Esc 关闭）</td></tr>"
-        "<tr><td><b>Alt + R</b></td><td>重新设置各窗体显示位置（全部复位到各自的默认屏幕）</td></tr>"
-        "<tr><td><b>Alt + 1 ~ 7</b><br/><b>Alt + 小键盘 1 ~ 7</b></td>"
-        "<td>切换屏幕：目标屏的显示内容与主屏对调，其余屏幕复位</td></tr>"
-        "<tr><td><b>Alt + Q</b><br/><b>Alt + F4</b></td><td>关闭所有窗体并退出程序</td></tr>"
-        "</table>"));
-    // 限定最小宽度，避免在大屏上对话框过窄导致内容换行拥挤
-    box.setStyleSheet(QStringLiteral("QLabel{min-width:560px;}"));
-    box.setStandardButtons(QMessageBox::Ok);
-    if (QAbstractButton *okButton = box.button(QMessageBox::Ok))
-    {
-        okButton->setText(QStringLiteral("知道了"));
-    }
-    box.exec();
-
-    isDialogShowing = false;
-}
-
-/**
- * @brief 注册 Alt+H 快捷键的响应：按下时弹出快捷键说明界面
+ * @brief 注册 Alt+H 快捷键的响应：首次按下弹出快捷键说明浮层，再次按下隐藏
  * @param watcher 全局热键监听器
+ * @param helpDialog 快捷键说明浮层，生命周期由 main() 的栈对象管理
  */
-void shortcutHelpWatcher(GlobalKeyWatcher &watcher)
+void shortcutHelpWatcher(GlobalKeyWatcher &watcher, ShortcutHelpDialog &helpDialog)
 {
-    QObject::connect(&watcher, &GlobalKeyWatcher::helpKeyPressed, []() { showShortcutHelpDialog(); });
+    QObject::connect(&watcher, &GlobalKeyWatcher::helpKeyPressed, [&helpDialog]() { helpDialog.toggle(); });
 }
 
 QMutex globalMutex;
@@ -404,12 +363,14 @@ int main(int argc, char *argv[])
 
         Sleep(200);
         QTimer timer;
+        // 快捷键说明浮层：栈对象，生命周期覆盖整个事件循环，避免堆对象的泄漏与悬挂
+        ShortcutHelpDialog shortcutHelpDialog;
         GlobalKeyWatcher::watcher.init();
         closeUndesiredWindowTimer(timer);
         screenSwitchWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         reloadScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         closeAppsWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
-        shortcutHelpWatcher(GlobalKeyWatcher::watcher);
+        shortcutHelpWatcher(GlobalKeyWatcher::watcher, shortcutHelpDialog);
 
         QTimer::singleShot(500, [=]() { reloadScreen(GlobalVariants::winList); });
         return a.exec();

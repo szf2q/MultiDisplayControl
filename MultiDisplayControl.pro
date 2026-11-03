@@ -39,6 +39,8 @@ win32 {
 
 SOURCES += CefWebView.cpp
 HEADERS += CefWebView.h
+SOURCES += ShortcutHelpDialog.cpp
+HEADERS += ShortcutHelpDialog.h
 
 CONFIG += c++11
 
