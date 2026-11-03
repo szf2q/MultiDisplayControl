@@ -152,8 +152,11 @@ LIBS += -L$$DESTDIR -ltz.utils.base
 win32{
     msvc{
         LIBS+=-luser32
-        QMAKE_CXXFLAGS += /source-charset:utf-8 /execution-charset:utf-8
-        QMAKE_CFLAGS += /source-charset:utf-8 /execution-charset:utf-8
+        # 统一按 UTF-8 源码与执行字符集编译。
+        # 注意：必须使用 /utf-8 组合开关，分别传 /source-charset 与 /execution-charset 时
+        # QStringLiteral 生成的中文字面量仍会按系统 ANSI 代码页解析，导致界面中文乱码。
+        QMAKE_CXXFLAGS += /utf-8
+        QMAKE_CFLAGS += /utf-8
     }else{
         LIBS += -l Kernel32.dll -l Psapi
     }

@@ -8,6 +8,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QScreen>
 #include <QSplitter>
@@ -23,7 +24,8 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
 {
     setWindowTitle(QStringLiteral("多屏控制管理"));
     setObjectName(QStringLiteral("managementWindow"));
-    setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
+    // 无边框窗口：去掉系统标题栏与阴影边框，由窗口内部的标题区承担拖动与关闭职责
+    setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     resize(1500, 950);
     setMinimumSize(1200, 800);
 
@@ -243,6 +245,41 @@ void ManagementWindow::closeEvent(QCloseEvent *event)
     // 关闭仅隐藏，保持管理界面状态与运行时展示不受影响
     hide();
     event->ignore();
+}
+
+void ManagementWindow::mousePressEvent(QMouseEvent *event)
+{
+    // 无边框窗口没有系统标题栏，按住窗口空白处（标题、说明文字等）即可拖动
+    if (event->button() == Qt::LeftButton)
+    {
+        m_dragging = true;
+        m_dragOffset = event->globalPos() - frameGeometry().topLeft();
+        event->accept();
+        return;
+    }
+    QWidget::mousePressEvent(event);
+}
+
+void ManagementWindow::mouseMoveEvent(QMouseEvent *event)
+{
+    if (m_dragging && (event->buttons() & Qt::LeftButton))
+    {
+        move(event->globalPos() - m_dragOffset);
+        event->accept();
+        return;
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void ManagementWindow::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+    {
+        m_dragging = false;
+        event->accept();
+        return;
+    }
+    QWidget::mouseReleaseEvent(event);
 }
 
 void ManagementWindow::onSave()

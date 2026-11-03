@@ -1,6 +1,7 @@
 #ifndef MANAGEMENTWINDOW_H
 #define MANAGEMENTWINDOW_H
 
+#include <QPoint>
 #include <QStringList>
 #include <QWidget>
 
@@ -74,6 +75,24 @@ class ManagementWindow : public QWidget
      * @param event 关闭事件
      */
     void closeEvent(QCloseEvent *event) override;
+
+    /**
+     * @brief 无边框窗口拖动：按下空白区域开始拖动
+     * @param event 鼠标事件
+     */
+    void mousePressEvent(QMouseEvent *event) override;
+
+    /**
+     * @brief 无边框窗口拖动：按住左键移动窗口
+     * @param event 鼠标事件
+     */
+    void mouseMoveEvent(QMouseEvent *event) override;
+
+    /**
+     * @brief 无边框窗口拖动：松开左键结束拖动
+     * @param event 鼠标事件
+     */
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
   private slots:
     /**
@@ -151,6 +170,10 @@ class ManagementWindow : public QWidget
     MultiScreenConfig m_config;
     /** 是否存在未保存修改 */
     bool m_dirty = false;
+    /** 无边框窗口拖动：按下点相对窗口左上角的偏移 */
+    QPoint m_dragOffset;
+    /** 是否正在拖动窗口 */
+    bool m_dragging = false;
 
     QLabel *titleLabel = nullptr;
     QLabel *dirtyLabel = nullptr;
