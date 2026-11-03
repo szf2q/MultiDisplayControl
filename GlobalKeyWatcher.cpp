@@ -13,9 +13,36 @@ namespace
  */
 std::atomic<bool> winKeyBlocked(false);
 
+/**
+ * @brief 当前是否存在可切换的标签目标
+ *
+ * 由 setTabSwitchSource() 维护：只有至少一块屏存在多个标签时才为 true。
+ * 为 false 时钩子放行 Alt+Tab，保证没有任何标签可切时系统窗口切换仍然可用。
+ */
+std::atomic<bool> altTabAvailable(false);
+
 #ifdef Q_OS_WIN
 /** @brief 低级键盘钩子句柄，全局唯一，随进程存活 */
 HHOOK keyboardHook = nullptr;
+
+/**
+ * @brief 注册单个全局热键，并在失败时输出日志
+ *
+ * RegisterHotKey 可能因组合键被其它程序占用而失败，旧实现忽略了返回值，
+ * 现场遇到“快捷键无响应”时无从排查。
+ *
+ * @param id        热键标识
+ * @param modifiers 修饰键（MOD_ALT 等）
+ * @param key       虚拟键码
+ * @param name      可读名称，仅用于日志
+ */
+void registerOneHotkey(int id, UINT modifiers, UINT key, const char *name)
+{
+    if (RegisterHotKey(nullptr, id, modifiers, key) == FALSE)
+    {
+        qWarning() << "register hotkey failed, name = " << name << ", id = " << id << ", error = " << GetLastError();
+    }
+}
 
 /**
  * @brief 判断虚拟键码是否为左右 Win 键
@@ -53,7 +80,7 @@ LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
                 return 1;
             }
             if ((wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) && keyInfo->vkCode == VK_TAB &&
-                (GetAsyncKeyState(VK_MENU) & 0x8000) != 0)
+                (GetAsyncKeyState(VK_MENU) & 0x8000) != 0 && altTabAvailable.load())
             {
                 const bool reverse = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
                 // 钩子回调处于系统消息路径，界面操作统一排队到主线程执行，避免重入与死锁
@@ -117,28 +144,47 @@ bool GlobalKeyWatcher::isWinKeyDisabled() const
     return winKeyBlocked.load();
 }
 
+void GlobalKeyWatcher::setTabSwitchSource(const QObject *source, bool available)
+{
+    if (source == nullptr)
+    {
+        return;
+    }
+    if (available)
+    {
+        tabSwitchSources.insert(source);
+    }
+    else
+    {
+        tabSwitchSources.remove(source);
+    }
+    // 钩子回调只读取该原子量，此处写入后立即对后续按键生效
+    altTabAvailable.store(!tabSwitchSources.isEmpty());
+}
+
 void GlobalKeyWatcher::registerHotkey()
 {
-    RegisterHotKey(nullptr, 10, MOD_ALT, 'R');
-    RegisterHotKey(nullptr, 11, MOD_ALT, 'H');
-    RegisterHotKey(nullptr, 12, MOD_ALT, 'M');
-    RegisterHotKey(nullptr, 20, MOD_ALT, 'Q');
-    RegisterHotKey(nullptr, 21, MOD_ALT, VK_F4);
-    RegisterHotKey(nullptr, 22, MOD_ALT, VK_F5);
-    RegisterHotKey(nullptr, 31, MOD_ALT, VK_NUMPAD1);
-    RegisterHotKey(nullptr, 32, MOD_ALT, VK_NUMPAD2);
-    RegisterHotKey(nullptr, 33, MOD_ALT, VK_NUMPAD3);
-    RegisterHotKey(nullptr, 34, MOD_ALT, VK_NUMPAD4);
-    RegisterHotKey(nullptr, 35, MOD_ALT, VK_NUMPAD5);
-    RegisterHotKey(nullptr, 36, MOD_ALT, VK_NUMPAD6);
-    RegisterHotKey(nullptr, 37, MOD_ALT, VK_NUMPAD7);
-    RegisterHotKey(nullptr, 41, MOD_ALT, '1');
-    RegisterHotKey(nullptr, 42, MOD_ALT, '2');
-    RegisterHotKey(nullptr, 43, MOD_ALT, '3');
-    RegisterHotKey(nullptr, 44, MOD_ALT, '4');
-    RegisterHotKey(nullptr, 45, MOD_ALT, '5');
-    RegisterHotKey(nullptr, 46, MOD_ALT, '6');
-    RegisterHotKey(nullptr, 47, MOD_ALT, '7');
+    // 统一通过 registerOneHotkey 注册：任一热键注册失败只记录日志，不影响其它热键
+    registerOneHotkey(10, MOD_ALT, 'R', "Alt+R");
+    registerOneHotkey(11, MOD_ALT, 'H', "Alt+H");
+    registerOneHotkey(12, MOD_ALT, 'M', "Alt+M");
+    registerOneHotkey(20, MOD_ALT, 'Q', "Alt+Q");
+    registerOneHotkey(21, MOD_ALT, VK_F4, "Alt+F4");
+    registerOneHotkey(22, MOD_ALT, VK_F5, "Alt+F5");
+    registerOneHotkey(31, MOD_ALT, VK_NUMPAD1, "Alt+Num1");
+    registerOneHotkey(32, MOD_ALT, VK_NUMPAD2, "Alt+Num2");
+    registerOneHotkey(33, MOD_ALT, VK_NUMPAD3, "Alt+Num3");
+    registerOneHotkey(34, MOD_ALT, VK_NUMPAD4, "Alt+Num4");
+    registerOneHotkey(35, MOD_ALT, VK_NUMPAD5, "Alt+Num5");
+    registerOneHotkey(36, MOD_ALT, VK_NUMPAD6, "Alt+Num6");
+    registerOneHotkey(37, MOD_ALT, VK_NUMPAD7, "Alt+Num7");
+    registerOneHotkey(41, MOD_ALT, '1', "Alt+1");
+    registerOneHotkey(42, MOD_ALT, '2', "Alt+2");
+    registerOneHotkey(43, MOD_ALT, '3', "Alt+3");
+    registerOneHotkey(44, MOD_ALT, '4', "Alt+4");
+    registerOneHotkey(45, MOD_ALT, '5', "Alt+5");
+    registerOneHotkey(46, MOD_ALT, '6', "Alt+6");
+    registerOneHotkey(47, MOD_ALT, '7', "Alt+7");
 }
 
 bool GlobalKeyWatcher::nativeEventFilter(const QByteArray &eventType, void *message, long *result)

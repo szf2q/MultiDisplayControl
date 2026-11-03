@@ -5,6 +5,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QKeyEvent>
+#include <QSet>
 #ifdef Q_OS_WIN
 #    include <windows.h>
 #endif
@@ -47,6 +48,19 @@ class GlobalKeyWatcher : public QObject, public QAbstractNativeEventFilter
      */
     bool isWinKeyDisabled() const;
 
+    /**
+     * @brief 登记某个屏幕窗口当前是否具备 Alt+Tab 切换目标
+     *
+     * 低级键盘钩子会无条件吞掉 Alt+Tab，若当前没有任何可切换的标签，
+     * 系统自带的窗口切换也会一起失效。这里由各屏幕窗口在标签数量变化时登记，
+     * 只有至少一个窗口存在多个标签时钩子才接管该组合键，否则放行给系统。
+     *
+     * @param source    调用方（屏幕窗口），用作登记表的键
+     * @param available true 表示该窗口当前可以切换标签
+     * @note 必须在主线程调用；窗口销毁前应传入 false 注销
+     */
+    void setTabSwitchSource(const QObject *source, bool available);
+
   signals:
     void switchScreenKeyPressed(const int &screenIndex, const QString &keyMessage);
     void quitKeyPressed(const QString &keyMessage);
@@ -62,6 +76,10 @@ class GlobalKeyWatcher : public QObject, public QAbstractNativeEventFilter
      * @param reverse true 表示 Alt+Shift+Tab（向前切换）
      */
     void altTabPressed(bool reverse);
+
+  private:
+    /** @brief 当前具备 Alt+Tab 切换目标的屏幕窗口集合（仅主线程访问） */
+    QSet<const QObject *> tabSwitchSources;
 };
 
 #endif  // GLOBALKEYWATCHER_H

@@ -1,9 +1,14 @@
 #ifndef SCREENCONFIG_H
 #define SCREENCONFIG_H
 
+#include <QFileInfo>
+#include <QGuiApplication>
 #include <QList>
 #include <QRect>
+#include <QScreen>
 #include <QString>
+
+#include <cmath>
 
 /** @brief 软件清单拖拽使用的 MIME 类型，内容为软件 id */
 #define MDC_SOFTWARE_MIME "application/x-mdc-software-id"
@@ -123,5 +128,71 @@ struct MultiScreenConfig
     /** 全局软件清单 */
     QList<SoftwareItem> softwareList;
 };
+
+/**
+ * @brief 判断应用路径是否为网页地址
+ *
+ * 运行时与界面层此前各自重复书写 startsWith("http://") 判断，规则容易随修改漂移，
+ * 这里统一到一处：仅 http/https 视为网页，比较时忽略大小写（HTTP:// 也合法）。
+ *
+ * @param path 应用路径
+ * @return true 表示网页地址
+ */
+inline bool isWebAppPath(const QString &path)
+{
+    return path.startsWith("http://", Qt::CaseInsensitive) || path.startsWith("https://", Qt::CaseInsensitive);
+}
+
+/**
+ * @brief 判断应用路径是否为演示文稿
+ *
+ * 只按扩展名判断，避免旧实现 contains(".ppt") 把目录名里含 ppt 的普通程序误判为演示文稿。
+ *
+ * @param path 应用路径
+ * @return true 表示 ppt/pptx/pps/ppsx 演示文稿
+ */
+inline bool isPptAppPath(const QString &path)
+{
+    const QString suffix = QFileInfo(path).suffix().toLower();
+    return suffix == "ppt" || suffix == "pptx" || suffix == "pps" || suffix == "ppsx";
+}
+
+/**
+ * @brief 物理屏排序比较器：主屏优先，其余先按列（每 100 像素为一列）后按行
+ *
+ * 旧实现按“|Δx| < 100 时比较 y，否则比较 x”成对比较，不满足严格弱序，
+ * 对三块及以上屏幕可能让 std::sort 读到越界元素而崩溃。这里改为对每块屏计算
+ * 固定的排序键（列号、行号、名称），任意两块屏之间的比较结果都保持一致。
+ *
+ * @param a 屏幕 a
+ * @param b 屏幕 b
+ * @return true 表示 a 应排在 b 之前
+ */
+inline bool isScreenOrderedBefore(QScreen *a, QScreen *b)
+{
+    if (a == b)
+    {
+        return false;
+    }
+    const bool isPrimaryA = (a == QGuiApplication::primaryScreen());
+    const bool isPrimaryB = (b == QGuiApplication::primaryScreen());
+    if (isPrimaryA != isPrimaryB)
+    {
+        return isPrimaryA;
+    }
+    // 用 floor 而不是整数除法，保证负坐标（主屏左侧的屏幕）也能落在同一列分桶规则上
+    const int columnA = (int)std::floor(a->geometry().x() / 100.0);
+    const int columnB = (int)std::floor(b->geometry().x() / 100.0);
+    if (columnA != columnB)
+    {
+        return columnA < columnB;
+    }
+    if (a->geometry().y() != b->geometry().y())
+    {
+        return a->geometry().y() < b->geometry().y();
+    }
+    // 名称作为最终兜底键，保证坐标完全相同的屏幕也有确定的先后顺序
+    return a->name() < b->name();
+}
 
 #endif  // SCREENCONFIG_H

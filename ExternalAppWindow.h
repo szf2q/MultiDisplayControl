@@ -172,6 +172,15 @@ class ExternalAppWindow : public QMainWindow
      */
     void startNativeHostFitTimer();
 
+    /**
+     * @brief 释放本屏已登记的全部应用资源
+     *
+     * 依次结束 PPT 放映会话、外部程序进程与标签页，并清空宿主控件映射、
+     * 软件 id 映射与预启动标记。供“重新加载”与析构共用：
+     * 旧实现重新加载时只清空列表和标签，会遗留外部进程、窗口包装与失效指针。
+     */
+    void releaseAllApps();
+
     QScreen *defaultScreen = nullptr;
     QScreen *currentScreen = nullptr;
     QList<QScreen *> screenList;

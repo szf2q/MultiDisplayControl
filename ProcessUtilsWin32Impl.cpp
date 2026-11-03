@@ -39,6 +39,32 @@ QVector<quint64> enumProcessIdsByName(const QString &processName)
     return pidList;
 }
 
+/**
+ * @brief 读取窗口标题
+ * @param hwnd 窗口句柄
+ * @return 窗口标题
+ * @note 必须使用 Unicode 版 API：旧实现用 GetWindowTextA + fromLocal8Bit，
+ *       在 UTF-8 执行字符集下会把中文标题错误解码成乱码，进而导致按标题匹配失败
+ */
+QString windowTextOf(HWND hwnd)
+{
+    wchar_t title[512] = {0};
+    GetWindowTextW(hwnd, title, 512);
+    return QString::fromWCharArray(title);
+}
+
+/**
+ * @brief 读取窗口类名
+ * @param hwnd 窗口句柄
+ * @return 窗口类名（类名本身为 ASCII，统一按 Unicode 读取避免编码歧义）
+ */
+QString windowClassOf(HWND hwnd)
+{
+    wchar_t className[512] = {0};
+    GetClassNameW(hwnd, className, 512);
+    return QString::fromWCharArray(className);
+}
+
 /** @brief 内核设备名与盘符的映射项，first 为设备名（如 \Device\HarddiskVolume3），second 为盘符（如 C:） */
 typedef QPair<QString, QString> DeviceDrivePair;
 
@@ -186,11 +212,8 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfoByWindowTitle(const QStrin
                 return TRUE;
             }
             EnumInOrOutputInfo *input = reinterpret_cast<EnumInOrOutputInfo *>(lParam);
-            char title[256];
-            char className[256];
-            //获取窗口标题
-            GetWindowTextA(hwnd, title, sizeof(title));
-            QString tmpTitle = QString::fromLocal8Bit(title);
+            // 使用 Unicode 版 API 读取标题与类名，保证中文标题不会出现乱码
+            QString tmpTitle = windowTextOf(hwnd);
             if (!tmpTitle.contains(input->winTitle))
             {
                 return TRUE;
@@ -202,8 +225,7 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfoByWindowTitle(const QStrin
             processInfo.hwnd = hwnd;
             processInfo.pid = windowProcessId;
             processInfo.titleName = tmpTitle;
-            GetClassNameA(hwnd, className, sizeof(className));
-            processInfo.className = QString::fromLocal8Bit(className);
+            processInfo.className = windowClassOf(hwnd);
             input->processList.append(processInfo);
             //继续枚举
             return TRUE;
@@ -272,8 +294,6 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(quint64 pid)
         return processList;
     }
 
-    char title[256];
-    char className[256];
     for (int i = 1; i < processHwndList.count(); i++)
     {
         HWND processHwnd = processHwndList[i];
@@ -281,18 +301,16 @@ QVector<ProcessInfo> ProcessUtilsWin32::getProcessInfo(quint64 pid)
         {
             continue;
         }
-        //获取窗口标题
-        GetWindowTextA(processHwnd, title, sizeof(title));
+        // 统一使用 Unicode 版 API，避免中文窗口标题乱码
         ProcessInfo processInfo;
         processInfo.hwnd = processHwnd;
         processInfo.pid = pid;
-        processInfo.titleName = QString::fromLocal8Bit(title);
+        processInfo.titleName = windowTextOf(processHwnd);
         if (processInfo.titleName.isEmpty())
         {
             continue;
         }
-        GetClassNameA(processHwnd, className, sizeof(className));
-        processInfo.className = QString::fromLocal8Bit(className);
+        processInfo.className = windowClassOf(processHwnd);
         if (processInfo.className.isEmpty())
         {
             continue;
@@ -345,41 +363,38 @@ bool ProcessUtilsWin32::isProcessExist(const QString &processName)
 
 bool ProcessUtilsWin32::startProcess(const QString &processPath, const QString &startupArgs, const bool runAsAdmin)
 {
-    QProcess *p = new QProcess();
     QStringList args = startupArgs.split(" ");
-    QString userDataDir;
     QString tmpPath = QDir::toNativeSeparators(processPath);
     QFileInfo appFile(tmpPath);
     QString appDir = appFile.absolutePath();
     QString processName = appFile.fileName();
     qDebug() << "appDir = " << appDir << ", processName = " << processName;
+    // 说明：QProcess::setNativeArguments 仅对非静态的 startDetached(qint64 *) 生效，
+    // 且 "runas" 也不是 ShellExecute 动词，因此 runAsAdmin 并不能真正提权。
+    // 真正的按需提权需改用 ShellExecuteEx 的 runas 动词，但那会导致每个外部应用启动时
+    // 都弹出 UAC 授权框，属功能回归，故此处保持原有行为不变，仅保留参数以兼容接口。
+    Q_UNUSED(runAsAdmin)
+    // 用栈对象承载 QProcess，并统一以“分离模式”启动：
+    // 旧实现在非分离分支中 new QProcess 后永不释放，每启动一个外部程序就泄漏一个对象；
+    // 分离启动后子进程不依赖 QProcess 存活，函数返回即可安全析构。
+    QProcess process;
+    process.setProgram(tmpPath);
+    process.setArguments(args);
+    process.setWorkingDirectory(appDir);
     if (tmpPath.contains("chrome.exe"))
     {
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         env.remove("__COMPAT_LAYER");
         env.remove("RunAsInvoker");
-        p->setProcessEnvironment(env);
+        process.setProcessEnvironment(env);
     }
-    qDebug() << "runAsAdmin = " << runAsAdmin << "processPath = " << tmpPath << "args = " << args;
-    if (runAsAdmin)
+    qDebug() << "processPath = " << tmpPath << "args = " << args;
+    if (!process.startDetached())
     {
-        // 说明：QProcess::setNativeArguments 仅对非静态的 startDetached(qint64 *) 生效，
-        // 这里调用的是静态 startDetached，且 "runas" 也不是 ShellExecute 动词，
-        // 因此并不能真正提权。真正的按需提权需改用 ShellExecuteEx 的 runas 动词，
-        // 但那会导致每个外部应用启动时都弹出 UAC 授权框，属功能回归，故此处保持原有行为不变。
-        p->startDetached(tmpPath, args);
-        // 已分离启动，QProcess 对象不再被使用，及时释放避免内存泄漏
-        delete p;
-        p = nullptr;
+        qDebug() << "start detached process failed, app path = " << tmpPath << ", error = " << process.errorString();
+        return false;
     }
-    else
-    {
-        p->setWorkingDirectory(appDir);
-        p->start(tmpPath, args);
-        // 注意：QProcess 析构会结束仍在运行的子进程，因此该对象必须常驻（不能 delete），
-        // 以保证通过 QProcess 启动的外部应用继续运行。
-    }
-    ProcessInfo processInfo;
+
     int timeUsed = 0;
     bool startSuccess = false;
     // 进程存在性检查已改为内存快照，单次开销极低，因此把轮询间隔由 500ms 缩短为 100ms，

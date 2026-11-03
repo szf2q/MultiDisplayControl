@@ -25,13 +25,14 @@ QString ConfigStore::iniPath(const QString &dir)
 
 bool ConfigStore::isWebPath(const QString &path)
 {
-    return path.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive) ||
-           path.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive);
+    // 复用 ScreenConfig.h 中的统一判断，避免界面层与运行时层各写一份判断规则
+    return isWebAppPath(path);
 }
 
 bool ConfigStore::isPptPath(const QString &path)
 {
-    return path.contains(QStringLiteral(".ppt"), Qt::CaseInsensitive);
+    // 改为按扩展名判断：旧实现用 contains(".ppt")，会把目录名含 ppt 的普通程序误判为演示文稿
+    return isPptAppPath(path);
 }
 
 QString ConfigStore::detectType(const QString &path)

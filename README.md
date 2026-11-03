@@ -224,6 +224,8 @@ app_1_startup_args=
 | `Alt+H` | 显示/关闭快捷键说明浮层 |
 | `Alt+Q` / `Alt+F4` | 关闭所有窗口并退出程序 |
 
+`Alt+Tab` / `Alt+Shift+Tab` 用于循环切换鼠标所在屏幕的标签页；只有该屏存在两个及以上标签时才由程序接管，否则放行给 Windows 自带的窗口切换。
+
 切换逻辑见 [switchScreen()](file:///d:/sunzhenfeng/projects/MultiDisplayControl/main.cpp#L141-L203) 与 [reloadScreen()](file:///d:/sunzhenfeng/projects/MultiDisplayControl/main.cpp#L212-L230)：若目标屏即主屏则仅复位；否则交换两块屏幕的显示内容，其余窗口复位到默认屏幕。窗口已隐藏或主屏缺失时不做处理。
 
 ## 9. 编译与部署
@@ -261,6 +263,8 @@ make            # Windows + MinGW 使用 mingw32-make；MSVC 使用 nmake / jom
 直接运行 `MultiDisplayControl.exe`：
 
 - 需管理员权限时会在启动阶段弹出 UAC 并自动重启自身；
+- 程序为单实例运行：重复启动会提示“程序已在运行”并直接退出，避免热键注册冲突与外部程序被重复拉起；
+- 配置中存在 PPT 时，启动只清理上次运行遗留的、没有可见窗口的 WPS 进程，不会结束用户正在编辑的 WPS 文档；
 - 启动后按 `config.json` 为每块屏幕创建窗口并加载内容，之后进入消息循环等待热键；
 - 网页缓存与运行日志（`debug.log`）生成在可执行文件目录下。
 

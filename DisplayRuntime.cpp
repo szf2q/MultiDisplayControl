@@ -208,24 +208,9 @@ QList<QScreen *> DisplayRuntime::sortedScreens(bool sortScreen)
     {
         return screens;
     }
-    // 与 ExternalAppWindow::initWindow 保持同一排序规则：主屏优先，其余先按列后按行
-    std::sort(screens.begin(), screens.end(), [](QScreen *a, QScreen *b) {
-        bool isPrimaryA = (a == QGuiApplication::primaryScreen());
-        bool isPrimaryB = (b == QGuiApplication::primaryScreen());
-        if (isPrimaryA)
-        {
-            return false;
-        }
-        if (isPrimaryB)
-        {
-            return true;
-        }
-        if (abs(a->geometry().x() - b->geometry().x()) < 100)
-        {
-            return a->geometry().y() < b->geometry().y();
-        }
-        return a->geometry().x() < b->geometry().x();
-    });
+    // 与 ExternalAppWindow::initWindow 共用同一排序规则（主屏优先，其余先按列后按行），
+    // 比较器满足严格弱序，避免多屏场景下 std::sort 产生越界访问
+    std::sort(screens.begin(), screens.end(), &isScreenOrderedBefore);
     return screens;
 }
 

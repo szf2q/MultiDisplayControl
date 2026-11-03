@@ -4,7 +4,9 @@
 #include <QDebug>
 #include <QDir>
 #include <QMap>
+#include <QMessageBox>
 #include <QNetworkProxyFactory>
+#include <QSharedMemory>
 #include <QSharedPointer>
 #include <QTimer>
 #include <QVector>
@@ -52,12 +54,14 @@ void closeUndesiredWindowTimer(QTimer &timer)
             {
                 continue;
             }
-            char text[256];
-            GetWindowTextA(process.hwnd, text, sizeof(text));
-            char className[256];
-            GetClassNameA(process.hwnd, className, sizeof(className));
-            QString tmpTitle = QString::fromLocal8Bit(text);
-            QString tmpClass = QString::fromLocal8Bit(className);
+            // 使用 Unicode 版 API 读取标题与类名：旧实现用 GetWindowTextA + fromLocal8Bit，
+            // 在 UTF-8 执行字符集下中文标题会变成乱码，导致下面的匹配规则永远不生效
+            wchar_t text[512] = {0};
+            GetWindowTextW(process.hwnd, text, 512);
+            wchar_t className[512] = {0};
+            GetClassNameW(process.hwnd, className, 512);
+            QString tmpTitle = QString::fromWCharArray(text);
+            QString tmpClass = QString::fromWCharArray(className);
             if (tmpTitle.isEmpty())
             {
                 continue;
@@ -287,6 +291,40 @@ void shortcutHelpWatcher(GlobalKeyWatcher &watcher, ShortcutHelpDialog &helpDial
     QObject::connect(&watcher, &GlobalKeyWatcher::helpKeyPressed, [&helpDialog]() { helpDialog.toggle(); });
 }
 
+/**
+ * @brief 结束上次运行遗留的、没有可见窗口的 WPS 进程
+ *
+ * 播放 PPT 依赖 WPS 的 COM 实例：上一次异常退出可能残留没有界面的 wpp/wps 进程，
+ * 新放映请求会挂到这些残留实例上导致放映失败。
+ * 旧实现在启动时按进程名无条件结束 wpp/wps/wpscloudsvr/wpsupdate，
+ * 会把用户正在编辑的 WPS 文档一并杀掉，属于破坏性操作；
+ * 这里只结束“没有任何可见顶层窗口”的残留实例，用户已打开的文档不受影响。
+ *
+ * @param processUtils 进程工具实例，为空时直接返回
+ */
+void killStaleWpsInstances(ProcessUtils *processUtils)
+{
+    if (processUtils == nullptr)
+    {
+        return;
+    }
+    const QStringList processNames = QStringList() << "wpp.exe" << "wps.exe";
+    for (int i = 0; i < processNames.size(); i++)
+    {
+        const QVector<ProcessInfo> processList = processUtils->getProcessInfo(processNames[i]);
+        for (int j = 0; j < processList.size(); j++)
+        {
+            // hwnd 为 0 表示该进程没有可见的顶层窗口，即上次运行残留的后台实例
+            if (processList[j].hwnd != 0 || processList[j].pid == 0)
+            {
+                continue;
+            }
+            qDebug() << "kill stale wps process, name = " << processNames[i] << ", pid = " << processList[j].pid;
+            processUtils->killProcess(processList[j].pid);
+        }
+    }
+}
+
 QMutex globalMutex;
 int main(int argc, char *argv[])
 {
@@ -315,6 +353,18 @@ int main(int argc, char *argv[])
             {
                 return ret;
             }
+        }
+
+        // 单实例保护：多开会让全局热键注册冲突、同一外部程序被重复拉起，
+        // 且两个实例会互相结束对方启动的进程。必须放在提权重启之后：
+        // 提权时父进程会立即退出，若提前占用共享内存，被拉起的提权子进程会误判为“已运行”。
+        QSharedMemory singleInstanceGuard("MultiDisplayControl.SingleInstance");
+        if (!singleInstanceGuard.create(1))
+        {
+            qDebug() << "another instance is running, error = " << singleInstanceGuard.errorString();
+            QMessageBox::warning(nullptr, QStringLiteral("多屏控制"),
+                                 QStringLiteral("程序已在运行，请勿重复启动。"));
+            return 0;
         }
 
         // ==================== CEF(QCefView) 初始化 ====================
@@ -346,8 +396,7 @@ int main(int argc, char *argv[])
         {
             for (int j = 0; j < config.screenList[i].appCount; j++)
             {
-                QString tmpPath = config.screenList[i].appList[j].appPath;
-                if (tmpPath.contains(".ppt"))
+                if (isPptAppPath(config.screenList[i].appList[j].appPath))
                 {
                     hasPpt = true;
                     break;
@@ -356,13 +405,12 @@ int main(int argc, char *argv[])
         }
         if (hasPpt)
         {
+            // 只清理上次运行残留的无界面 WPS 实例，不再按进程名无条件结束，
+            // 避免误杀用户正在编辑的文档
             ProcessUtils *utils = ProcessFactory::newInstance();
-            utils->killProcess("wpp.exe");
-            utils->killProcess("wps.exe");
-            Sleep(200);
-            utils->killProcess("wpscloudsvr.exe");
-            utils->killProcess("wpsupdate.exe");
+            killStaleWpsInstances(utils);
             delete utils;
+            Sleep(200);
         }
 
         // 由运行时统一创建各屏窗口：先并行预启动全部外部程序，再按配置顺序完成加载与嵌入

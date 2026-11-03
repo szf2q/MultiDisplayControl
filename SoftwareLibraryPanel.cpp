@@ -250,7 +250,7 @@ void SoftwareEditDialog::onCapture()
     if (type == "web")
     {
         // 网页类型不需要检查本地文件，只校验地址格式
-        if (!probe.path.startsWith("http://") && !probe.path.startsWith("https://"))
+        if (!ConfigStore::isWebPath(probe.path))
         {
             QMessageBox::warning(this, QStringLiteral("生成预览"),
                                  QStringLiteral("请先填写以 http:// 或 https:// 开头的网页地址。"));
@@ -329,7 +329,7 @@ void SoftwareEditDialog::onAccept()
     }
     if (type == "web")
     {
-        if (!path.startsWith("http://") && !path.startsWith("https://"))
+        if (!ConfigStore::isWebPath(path))
         {
             QMessageBox::warning(this, QStringLiteral("校验失败"),
                                  QStringLiteral("网页地址必须以 http:// 或 https:// 开头。"));
