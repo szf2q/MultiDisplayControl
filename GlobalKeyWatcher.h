@@ -30,6 +30,23 @@ class GlobalKeyWatcher : public QObject, public QAbstractNativeEventFilter
      */
     Q_INVOKABLE void handleAltTab(bool reverse);
 
+    /**
+     * @brief 设置是否禁用 Windows 徽标键（Win 键）
+     *
+     * 由配置项 global.disableWinKey 驱动：开启后低级键盘钩子会吞掉 Win 键的
+     * 按下与抬起事件，系统因此收不到 Win 键状态，Win+D、Win+R 等组合键随之失效。
+     * 该接口可在运行时反复调用，保存配置后立即生效，无需重启程序。
+     *
+     * @param disabled true 表示屏蔽 Win 键，false 表示恢复正常
+     */
+    void setWinKeyDisabled(bool disabled);
+
+    /**
+     * @brief 查询当前是否处于禁用 Win 键状态
+     * @return true 表示 Win 键已被屏蔽
+     */
+    bool isWinKeyDisabled() const;
+
   signals:
     void switchScreenKeyPressed(const int &screenIndex, const QString &keyMessage);
     void quitKeyPressed(const QString &keyMessage);

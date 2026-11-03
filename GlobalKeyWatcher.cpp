@@ -1,13 +1,34 @@
 #include "GlobalKeyWatcher.h"
 
+#include <atomic>
+
 namespace
 {
+/**
+ * @brief 是否屏蔽 Win 键
+ *
+ * 由主线程通过 setWinKeyDisabled() 写入，低级键盘钩子在安装它的线程（主线程）
+ * 回调中读取，理论上不存在并发；这里仍使用原子量，避免极端情况下读到撕裂值。
+ * 声明在平台条件编译之外，保证非 Windows 平台也能编译通过（只是不生效）。
+ */
+std::atomic<bool> winKeyBlocked(false);
+
 #ifdef Q_OS_WIN
 /** @brief 低级键盘钩子句柄，全局唯一，随进程存活 */
 HHOOK keyboardHook = nullptr;
 
 /**
- * @brief 低级键盘钩子回调：拦截系统 Alt+Tab / Alt+Shift+Tab
+ * @brief 判断虚拟键码是否为左右 Win 键
+ * @param vkCode 虚拟键码
+ * @return true 表示是 Win 键
+ */
+bool isWinKey(UINT vkCode)
+{
+    return vkCode == VK_LWIN || vkCode == VK_RWIN;
+}
+
+/**
+ * @brief 低级键盘钩子回调：拦截系统 Alt+Tab / Alt+Shift+Tab，并按开关屏蔽 Win 键
  *
  * Alt+Tab 是 Windows 保留的组合键，RegisterHotKey 无法注册，
  * 因此改用 WH_KEYBOARD_LL 钩子在按键派发到系统之前截获：
@@ -20,16 +41,26 @@ HHOOK keyboardHook = nullptr;
  */
 LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
-    if (nCode == HC_ACTION && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN))
+    if (nCode == HC_ACTION)
     {
         const KBDLLHOOKSTRUCT *keyInfo = reinterpret_cast<const KBDLLHOOKSTRUCT *>(lParam);
-        if (keyInfo != nullptr && keyInfo->vkCode == VK_TAB && (GetAsyncKeyState(VK_MENU) & 0x8000) != 0)
+        if (keyInfo != nullptr)
         {
-            const bool reverse = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-            // 钩子回调处于系统消息路径，界面操作统一排队到主线程执行，避免重入与死锁
-            QMetaObject::invokeMethod(&GlobalKeyWatcher::watcher, "handleAltTab", Qt::QueuedConnection,
-                                      Q_ARG(bool, reverse));
-            return 1;
+            // 禁用 Win 键：按下与抬起一并吞掉。系统收不到 Win 键状态，
+            // Win+D、Win+R 等组合键不会触发；松开时一并拦截，避免出现“只收到抬起”的异常状态
+            if (winKeyBlocked.load() && isWinKey(keyInfo->vkCode))
+            {
+                return 1;
+            }
+            if ((wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) && keyInfo->vkCode == VK_TAB &&
+                (GetAsyncKeyState(VK_MENU) & 0x8000) != 0)
+            {
+                const bool reverse = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+                // 钩子回调处于系统消息路径，界面操作统一排队到主线程执行，避免重入与死锁
+                QMetaObject::invokeMethod(&GlobalKeyWatcher::watcher, "handleAltTab", Qt::QueuedConnection,
+                                          Q_ARG(bool, reverse));
+                return 1;
+            }
         }
     }
     return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
@@ -70,6 +101,22 @@ void GlobalKeyWatcher::handleAltTab(bool reverse)
     qDebug() << "组合键Alt+Tab触发, reverse = " << reverse;
     emit altTabPressed(reverse);
 }
+
+void GlobalKeyWatcher::setWinKeyDisabled(bool disabled)
+{
+    if (winKeyBlocked.load() == disabled)
+    {
+        return;
+    }
+    winKeyBlocked.store(disabled);
+    qDebug() << "禁用Win键状态变更, disabled = " << disabled;
+}
+
+bool GlobalKeyWatcher::isWinKeyDisabled() const
+{
+    return winKeyBlocked.load();
+}
+
 void GlobalKeyWatcher::registerHotkey()
 {
     RegisterHotKey(nullptr, 10, MOD_ALT, 'R');

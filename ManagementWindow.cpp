@@ -83,12 +83,15 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     sortScreenCheck = new QCheckBox(QStringLiteral("按位置排序屏幕"), this);
     debugModeCheck = new QCheckBox(QStringLiteral("调试模式（需重启）"), this);
     runAsAdminCheck = new QCheckBox(QStringLiteral("以管理员运行（需重启）"), this);
+    // 禁用 Win 键：勾选后由全局键盘钩子吞掉 Win 键，避免误触 Win+D/Win+R 打断全屏展示
+    disableWinKeyCheck = new QCheckBox(QStringLiteral("禁用 Win 键"), this);
 
     QHBoxLayout *settingLayout = new QHBoxLayout();
     settingLayout->addWidget(showIndexCheck);
     settingLayout->addWidget(sortScreenCheck);
     settingLayout->addWidget(debugModeCheck);
     settingLayout->addWidget(runAsAdminCheck);
+    settingLayout->addWidget(disableWinKeyCheck);
     settingLayout->addStretch(1);
 
     // ==================== 两栏内容（软件清单 | 屏幕布局） ====================
@@ -141,6 +144,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     connect(sortScreenCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
     connect(debugModeCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
     connect(runAsAdminCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
+    connect(disableWinKeyCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
 
     connect(libraryPanel, &SoftwareLibraryPanel::configChanged, this, [this]() {
         if (layoutCanvas != nullptr)
@@ -167,7 +171,7 @@ void ManagementWindow::setConfig(const MultiScreenConfig &config)
 
     // 回填全局开关，阻塞信号避免触发“未保存”标记
     const QList<QCheckBox *> checks = QList<QCheckBox *>() << showIndexCheck << sortScreenCheck << debugModeCheck
-                                                           << runAsAdminCheck;
+                                                           << runAsAdminCheck << disableWinKeyCheck;
     for (int i = 0; i < checks.size(); i++)
     {
         checks[i]->blockSignals(true);
@@ -176,6 +180,7 @@ void ManagementWindow::setConfig(const MultiScreenConfig &config)
     sortScreenCheck->setChecked(m_config.sortScreen);
     debugModeCheck->setChecked(m_config.debugMode);
     runAsAdminCheck->setChecked(m_config.runAsAdministrator);
+    disableWinKeyCheck->setChecked(m_config.disableWinKey);
     for (int i = 0; i < checks.size(); i++)
     {
         checks[i]->blockSignals(false);
@@ -419,6 +424,7 @@ void ManagementWindow::onGlobalSettingChanged()
     m_config.sortScreen = sortScreenCheck->isChecked();
     m_config.debugMode = debugModeCheck->isChecked();
     m_config.runAsAdministrator = runAsAdminCheck->isChecked();
+    m_config.disableWinKey = disableWinKeyCheck->isChecked();
     for (int i = 0; i < m_config.screenList.size(); i++)
     {
         m_config.screenList[i].showIndex = m_config.showIndex;

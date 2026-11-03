@@ -164,6 +164,8 @@ class ManagementWindow : public QWidget
     QCheckBox *sortScreenCheck = nullptr;
     QCheckBox *debugModeCheck = nullptr;
     QCheckBox *runAsAdminCheck = nullptr;
+    /** 禁用 Win 键开关：保存后立即生效，用于避免误触系统组合键打断全屏展示 */
+    QCheckBox *disableWinKeyCheck = nullptr;
     QPushButton *saveButton = nullptr;
     QPushButton *reloadButton = nullptr;
     QPushButton *closeButton = nullptr;

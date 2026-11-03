@@ -142,6 +142,8 @@ MultiDisplayControl/
 - `helpKeyPressed()` — `Alt + H`，弹出/关闭快捷键说明浮层（置顶、无边框，点击浮层外部或按 Esc 关闭）
 - `manageKeyPressed()` — `Alt + M`，打开/隐藏多屏控制管理界面
 
+全局配置 `global.disableWinKey` 开启时，同一低级键盘钩子会吞掉左右 Win 键的按下与抬起事件，系统收不到 Win 键状态，因此 `Win`、`Win+D`、`Win+R` 等组合键均失效，可避免全屏展示时误触系统界面；该开关在管理界面「禁用 Win 键」中切换，保存后立即生效，无需重启主程序。
+
 ## 7. 配置文件说明
 
 程序只读取可执行文件同目录下的 `config.json`（管理界面保存的唯一数据源）。管理界面保存时会先把已存在的 `config.json` 备份为 `config.json.bak`，再写入新的 `config.json`，不再生成 `config.ini`。若 `config.json` 不存在（旧部署升级），程序会自动读取同目录下的旧版 `config.ini` 完成一次导入，并把导入结果另存为 `config.json`，此后以 `config.json` 为准。
@@ -157,6 +159,7 @@ MultiDisplayControl/
 | `sort_screen` | bool | true | 是否按屏幕几何位置排序后再与配置序号对应 |
 | `debug_mode` | bool | false | 调试模式：不启动任何应用，仅显示占位标签页并保留标签栏 |
 | `runas_administrator` | bool | false | 是否以管理员身份运行（非管理员时自动提权重启） |
+| `disable_win_key` | bool | false | 是否禁用 Windows 徽标键（`config.json` 中为 `global.disableWinKey`），开启后 Win 键及 Win+D、Win+R 等系统组合键失效 |
 
 ### 7.2 屏幕配置节 `[screen-N]`（N 从 1 开始）
 

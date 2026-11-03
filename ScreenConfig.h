@@ -110,6 +110,14 @@ struct MultiScreenConfig
     bool sortScreen = true;
     bool debugMode = false;
     bool runAsAdministrator = false;
+    /**
+     * @brief 是否禁用 Windows 徽标键（Win 键）
+     *
+     * 开启后由 GlobalKeyWatcher 的低级键盘钩子吞掉 Win 键的按下/抬起事件，
+     * Win+D、Win+R 等系统组合键随之失效，避免值班人员误触导致全屏展示被打断。
+     * 该开关属于全局设置，保存后立即生效，无需重启。
+     */
+    bool disableWinKey = false;
     /** 单块屏幕配置列表，顺序即屏幕序号 */
     QList<ScreenConfig> screenList;
     /** 全局软件清单 */

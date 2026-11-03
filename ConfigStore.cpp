@@ -204,6 +204,7 @@ bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *confi
     config->sortScreen = global.value(QStringLiteral("sortScreen")).toBool(true);
     config->debugMode = global.value(QStringLiteral("debugMode")).toBool(false);
     config->runAsAdministrator = global.value(QStringLiteral("runAsAdministrator")).toBool(false);
+    config->disableWinKey = global.value(QStringLiteral("disableWinKey")).toBool(false);
 
     config->softwareList.clear();
     const QJsonArray softwareArray = root.value(QStringLiteral("software")).toArray();
@@ -295,6 +296,8 @@ bool ConfigStore::loadFromIni(const QString &dir, MultiScreenConfig *config, QSt
     config->debugMode = ini.getValue(QStringLiteral("screen"), QStringLiteral("debug_mode"), false).toBool();
     config->runAsAdministrator =
         ini.getValue(QStringLiteral("screen"), QStringLiteral("runas_administrator"), false).toBool();
+    // 旧版 ini 没有该配置项时按 false 处理，保证升级后行为与旧版本一致
+    config->disableWinKey = ini.getValue(QStringLiteral("screen"), QStringLiteral("disable_win_key"), false).toBool();
 
     // 旧配置同一路径可能带不同窗口标题，这里以“路径 + 标题”作为去重键，避免误合并
     QHash<QString, QString> softwareKeyToId;
@@ -427,6 +430,7 @@ bool ConfigStore::writeJson(const QString &filePath, const MultiScreenConfig &co
     global.insert(QStringLiteral("sortScreen"), config.sortScreen);
     global.insert(QStringLiteral("debugMode"), config.debugMode);
     global.insert(QStringLiteral("runAsAdministrator"), config.runAsAdministrator);
+    global.insert(QStringLiteral("disableWinKey"), config.disableWinKey);
     root.insert(QStringLiteral("global"), global);
 
     QJsonArray softwareArray;

@@ -374,6 +374,8 @@ int main(int argc, char *argv[])
         // 快捷键说明浮层：栈对象，生命周期覆盖整个事件循环，避免堆对象的泄漏与悬挂
         ShortcutHelpDialog shortcutHelpDialog;
         GlobalKeyWatcher::watcher.init();
+        // 按配置决定是否屏蔽 Win 键：必须在钩子安装之后设置，才能立即影响后续按键事件
+        GlobalKeyWatcher::watcher.setWinKeyDisabled(config.disableWinKey);
         closeUndesiredWindowTimer(timer);
         screenSwitchWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         reloadScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
@@ -391,6 +393,8 @@ int main(int argc, char *argv[])
                          [&runtime, &manager](const MultiScreenConfig &newConfig) {
                              QStringList warnings;
                              runtime.apply(newConfig, &warnings);
+                             // Win 键屏蔽开关保存后立即生效，无需重启主程序
+                             GlobalKeyWatcher::watcher.setWinKeyDisabled(newConfig.disableWinKey);
                              manager.notifyApplyResult(warnings);
                          });
 
