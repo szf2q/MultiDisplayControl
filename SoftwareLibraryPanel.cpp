@@ -7,6 +7,7 @@
 #include <QFileDialog>
 #include <QFileIconProvider>
 #include <QFileInfo>
+#include <QFontMetrics>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -15,10 +16,13 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QPainter>
 #include <QPixmap>
 #include <QPushButton>
 #include <QStringList>
 #include <QStyle>
+#include <QStyledItemDelegate>
+#include <QStyleOptionViewItem>
 #include <QVBoxLayout>
 
 #include "ConfigStore.h"
@@ -56,6 +60,103 @@ namespace
                 data->setData(MDC_SOFTWARE_MIME, items.first()->data(Qt::UserRole).toString().toUtf8());
             }
             return data;
+        }
+    };
+
+    /** @brief 列表项数据角色：软件名称（第一行文本） */
+    const int kSoftwareNameRole = Qt::UserRole + 1;
+    /** @brief 列表项数据角色：类型展示文本（第二行左侧） */
+    const int kSoftwareTypeRole = Qt::UserRole + 2;
+    /** @brief 列表项数据角色：已绑定屏幕标记文本（第二行右侧，未绑定为空） */
+    const int kSoftwareBoundRole = Qt::UserRole + 3;
+
+    /**
+     * @brief 软件清单条目绘制代理
+     *
+     * 列表条目需要“名称 + 类型 + 已绑定屏幕标记”三段样式不同的文本：
+     * 名称与类型左对齐，已绑定标记右对齐并使用醒目色。
+     * QListWidgetItem 只能设置单一颜色与对齐方式，因此这里自绘文本，
+     * 背景、选中态与缩略图仍交给基类绘制，保证与样式表外观一致。
+     */
+    class SoftwareItemDelegate : public QStyledItemDelegate
+    {
+      public:
+        /**
+         * @brief 构造函数
+         * @param parent 父对象
+         */
+        explicit SoftwareItemDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent)
+        {
+        }
+
+        /**
+         * @brief 绘制条目：基类画背景/选中态/图标，本类叠加两行文本与右对齐标记
+         * @param painter 绘制设备
+         * @param option  条目样式选项
+         * @param index   模型索引
+         */
+        void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+        {
+            QStyleOptionViewItem opt = option;
+            initStyleOption(&opt, index);
+            const QString name = index.data(kSoftwareNameRole).toString();
+            const QString typeText = index.data(kSoftwareTypeRole).toString();
+            const QString boundText = index.data(kSoftwareBoundRole).toString();
+
+            // 清空文本后交给基类：只保留背景、选中/悬停效果与缩略图
+            opt.text.clear();
+            QStyledItemDelegate::paint(painter, opt, index);
+
+            // 文本区域由样式计算，自动避开样式表里的 padding、margin 与左侧图标
+            QRect textRect = option.rect;
+            const QWidget *widget = option.widget;
+            if (widget != nullptr)
+            {
+                textRect = widget->style()->subElementRect(QStyle::SE_ItemViewItemText, &opt, widget);
+            }
+            if (textRect.isEmpty() || name.isEmpty())
+            {
+                return;
+            }
+
+            const bool selected = (opt.state & QStyle::State_Selected) != 0;
+            const int lineHeight = 22;
+            const int totalHeight = lineHeight * 2 + 2;
+            const int top = textRect.top() + qMax(0, (textRect.height() - totalHeight) / 2);
+
+            painter->save();
+            // 第一行：软件名称，选中时用白色保证对比度
+            QFont nameFont = opt.font;
+            nameFont.setPixelSize(15);
+            nameFont.setBold(true);
+            painter->setFont(nameFont);
+            painter->setPen(selected ? QColor(Qt::white) : QColor(0xd7, 0xe9, 0xff));
+            const QRect nameRect(textRect.left(), top, textRect.width(), lineHeight);
+            painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter,
+                              QFontMetrics(nameFont).elidedText(name, Qt::ElideRight, nameRect.width()));
+
+            // 第二行：左侧类型文本，右侧已绑定标记（右对齐、醒目色）
+            QFont infoFont = opt.font;
+            infoFont.setPixelSize(13);
+            painter->setFont(infoFont);
+            const QFontMetrics infoMetrics(infoFont);
+            const QRect infoRect(textRect.left(), nameRect.bottom() + 2, textRect.width(), lineHeight);
+            int reservedWidth = 0;
+            if (!boundText.isEmpty())
+            {
+                const int boundWidth = infoMetrics.horizontalAdvance(boundText);
+                const QRect boundRect(infoRect.right() - boundWidth, infoRect.top(), boundWidth, infoRect.height());
+                painter->setPen(QColor(0xff, 0xb6, 0x48));
+                painter->drawText(boundRect, Qt::AlignRight | Qt::AlignVCenter, boundText);
+                // 为标记与左侧类型文本之间留出间距，避免文字相贴
+                reservedWidth = boundWidth + 12;
+            }
+            painter->setPen(QColor(0x8a, 0xa6, 0xc4));
+            const int typeWidth = qMax(0, infoRect.width() - reservedWidth);
+            painter->drawText(QRect(infoRect.left(), infoRect.top(), typeWidth, infoRect.height()),
+                              Qt::AlignLeft | Qt::AlignVCenter,
+                              infoMetrics.elidedText(typeText, Qt::ElideRight, typeWidth));
+            painter->restore();
         }
     };
 
@@ -416,6 +517,8 @@ SoftwareLibraryPanel::SoftwareLibraryPanel(QWidget *parent) : QWidget(parent)
     listWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     listWidget->setUniformItemSizes(false);
     listWidget->setWordWrap(false);
+    // 自绘代理：名称/类型左对齐，已绑定屏幕标记右对齐并使用醒目色
+    listWidget->setItemDelegate(new SoftwareItemDelegate(listWidget));
 
     addButton = new QPushButton(QStringLiteral("新增"), this);
     editButton = new QPushButton(QStringLiteral("编辑"), this);
@@ -472,19 +575,19 @@ void SoftwareLibraryPanel::refresh()
             {
                 continue;
             }
-            // 已绑定到屏幕的软件在列表第二行显示标记，便于一眼识别不可再绑定的条目
+            // 已绑定到屏幕的软件在列表第二行右侧显示标记，便于一眼识别不可再绑定的条目
             const QString boundText = boundScreenText(software.id);
-            QString typeLine = typeDisplayName(software.type);
-            if (!boundText.isEmpty())
-            {
-                typeLine += QStringLiteral(" · ") + boundText;
-            }
+            const QString typeText = typeDisplayName(software.type);
             QListWidgetItem *item = new QListWidgetItem(listWidget);
             item->setIcon(iconForSoftware(software));
-            item->setText(QString("%1\n%2").arg(software.name).arg(typeLine));
+            // 文本保留完整信息用于无障碍读取，实际显示由 SoftwareItemDelegate 分层绘制
+            item->setText(QString("%1\n%2").arg(software.name).arg(typeText));
             item->setToolTip(boundText.isEmpty() ? software.path
                                                  : software.path + QStringLiteral("\n") + boundText);
             item->setData(Qt::UserRole, software.id);
+            item->setData(kSoftwareNameRole, software.name);
+            item->setData(kSoftwareTypeRole, typeText);
+            item->setData(kSoftwareBoundRole, boundText);
             if (!boundText.isEmpty())
             {
                 // 已绑定的软件不允许再次绑定：去掉拖拽标志，从拖拽源头阻止拖出，
@@ -519,12 +622,11 @@ void SoftwareLibraryPanel::refreshBindingMarks()
             continue;
         }
         const QString boundText = boundScreenText(softwareId);
-        QString typeLine = typeDisplayName(software->type);
-        if (!boundText.isEmpty())
-        {
-            typeLine += QStringLiteral(" · ") + boundText;
-        }
-        item->setText(QString("%1\n%2").arg(software->name).arg(typeLine));
+        const QString typeText = typeDisplayName(software->type);
+        item->setText(QString("%1\n%2").arg(software->name).arg(typeText));
+        item->setData(kSoftwareNameRole, software->name);
+        item->setData(kSoftwareTypeRole, typeText);
+        item->setData(kSoftwareBoundRole, boundText);
         item->setToolTip(boundText.isEmpty() ? software->path
                                              : software->path + QStringLiteral("\n") + boundText);
         // 绑定状态变化后同步拖拽能力：已绑定不可再拖出，解除绑定后恢复可拖拽
