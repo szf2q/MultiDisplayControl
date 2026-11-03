@@ -71,23 +71,35 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    ConfigStore.cpp \
+    DisplayRuntime.cpp \
     ExternalAppWindow.cpp \
     GlobalKeyWatcher.cpp \
     GlobalVariants.cpp \
+    ManagementWindow.cpp \
     ProcessUtilsWin32Impl.cpp \
+    ScreenLayoutCanvas.cpp \
+    SoftwareLibraryPanel.cpp \
+    SoftwarePreviewPanel.cpp \
     main.cpp
 
 HEADERS += \
+    ConfigStore.h \
+    DisplayRuntime.h \
     ExternalAppWindow.h \
     FullSizeTabWidget.h \
     GlobalKeyWatcher.h \
     GlobalVariants.h \
+    ManagementWindow.h \
     ProcessFactory.h \
     ProcessInfo.h \
     ProcessUtils.h \
     ProcessUtilsLinuxImpl.h \
     ProcessUtilsWin32Impl.h \
-    ScreenConfig.h
+    ScreenConfig.h \
+    ScreenLayoutCanvas.h \
+    SoftwareLibraryPanel.h \
+    SoftwarePreviewPanel.h
 
 FORMS += \
     ExternalAppWindow.ui

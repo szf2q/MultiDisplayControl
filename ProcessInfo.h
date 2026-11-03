@@ -18,5 +18,7 @@ struct ProcessInfo
     QProcess *process = nullptr;
     QWindow *externalWindow = nullptr;
     QString tabName = "";
+    /** 关联的软件清单 id，用于热更新时精确匹配标签与进程 */
+    QString appId = "";
 };
 #endif  // PROCESSINFO_H

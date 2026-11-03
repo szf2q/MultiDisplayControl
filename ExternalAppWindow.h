@@ -13,6 +13,7 @@
 #include <QProcess>
 #include <QScreen>
 #include <QSet>
+#include <QStringList>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QWindow>
@@ -70,6 +71,60 @@ class ExternalAppWindow : public QMainWindow
      */
     void prestartApps();
 
+    // ==================== 热更新接口 ====================
+    /**
+     * @brief 应用新的屏幕配置（标题、序号、显示序号开关、标签栏偏移、绑定的物理屏）
+     * @param cfg          新的屏幕配置
+     * @param targetScreen 目标物理屏，为空时保持当前绑定
+     * @note 本方法只更新窗口自身属性与标签标题，不处理应用增删与顺序，
+     *       应用差异由 DisplayRuntime 通过 addApp/removeApp/reorderTabs 完成。
+     */
+    void applyScreenConfig(const ScreenConfig &cfg, QScreen *targetScreen);
+
+    /**
+     * @brief 按标签当前顺序返回应用 id 列表
+     * @return 软件 id 列表，未知标签会被跳过
+     */
+    QStringList appIdsInTabOrder() const;
+
+    /**
+     * @brief 判断指定软件是否已存在于本屏
+     * @param appId 软件 id
+     * @return true 表示已存在
+     */
+    bool hasApp(const QString &appId) const;
+
+    /**
+     * @brief 在指定位置新增一个应用标签
+     * @param app         应用配置
+     * @param insertIndex 插入位置，小于 0 或超出范围时追加到末尾
+     */
+    void addApp(const AppConfig &app, int insertIndex = -1);
+
+    /**
+     * @brief 移除指定应用：结束进程/销毁视图并移除标签
+     * @param appId 软件 id
+     */
+    void removeApp(const QString &appId);
+
+    /**
+     * @brief 按给定顺序重排标签，不重启任何应用
+     * @param orderedAppIds 期望的标签顺序（软件 id）
+     */
+    void reorderTabs(const QStringList &orderedAppIds);
+
+    /**
+     * @brief 更新指定应用的标签名称
+     * @param appId   软件 id
+     * @param tabName 新标签名称
+     */
+    void updateAppTabName(const QString &appId, const QString &tabName);
+
+    /**
+     * @brief 刷新全部标签标题（显示序号开关或屏幕序号变化时使用）
+     */
+    void refreshTabTitles();
+
   protected:
     /**
      * @brief 事件过滤器：同步被嵌入的外部程序窗口尺寸
@@ -85,6 +140,20 @@ class ExternalAppWindow : public QMainWindow
     bool eventFilter(QObject *watched, QEvent *event) override;
 
   private:
+    /**
+     * @brief PPT 放映会话
+     *
+     * 记录 COM 控件、演示文稿与循环守护定时器，供热更新移除 PPT 时结束放映。
+     */
+    struct PptSession
+    {
+        QAxWidget *control = nullptr;
+        QAxObject *presentation = nullptr;
+        QTimer *timer = nullptr;
+        /** aboutToQuit 连接句柄，结束会话前必须断开，避免退出时访问已释放对象 */
+        QMetaObject::Connection quitConnection;
+    };
+
     /**
      * @brief 启动外部窗口尺寸校正定时器（幂等，重复调用只会创建一次）
      *
@@ -116,30 +185,85 @@ class ExternalAppWindow : public QMainWindow
     QSet<QString> prestartedAppPaths;
     /** @brief 预启动阶段明确启动失败的外部程序路径，嵌入阶段直接跳过，避免无谓的长时间等待 */
     QSet<QString> failedAppPaths;
+    /** @brief 软件 id 到标签页控件的映射，用于热更新时稳定定位标签 */
+    QHash<QString, QWidget *> appTabWidgets;
+    /** @brief 软件 id 到 PPT 放映会话的映射，用于热更新时结束放映 */
+    QHash<QString, PptSession> pptSessions;
+
     void initWindow();
     void initTabWidget();
     void tabIndexChanged(int tabIndex);
     void displayScreenIndex();
-    void startExternalProgram(AppConfig &app, bool isReload = false);
+    void startExternalProgram(AppConfig &app, bool isReload = false, int insertIndex = -1);
     /**
-     * @brief 重新加载单个应用（供 reloadApps() 调用）
+     * @brief 重新加载单个应用（供 reloadCurrentTab() 调用）
      * @param app 应用配置
      */
     void reloadApp(AppConfig &app);
     /**
      * @brief 结束某个应用对应的外部进程，并清理其窗口句柄与宿主控件映射
-     * @param app 应用配置，按进程路径匹配本屏已登记的外部进程
+     * @param app 应用配置，按软件 id 匹配本屏已登记的外部进程
      */
     void stopExternalApp(AppConfig &app);
     bool startProcess(AppConfig &app);
     ProcessInfo findProcessInfo(AppConfig &app);
     /**
      * @brief 加载网页应用（QCefView / CEF 内核实现）
-     * @param app 应用配置
+     * @param app         应用配置
+     * @param insertIndex 标签插入位置，小于 0 时追加到末尾
      */
-    void loadWebPage(AppConfig &app);
-    void addWindowToTabWidget(QWidget *widget, AppConfig &app);
-    void startAndPlayPpt(AppConfig &app);
-    void playPpt(QAxWidget *ppt, QAxObject *presentation, QAxObject *slideShowWindow, AppConfig &app);
+    void loadWebPage(AppConfig &app, int insertIndex = -1);
+    /**
+     * @brief 把已创建好的内容控件加入标签页
+     * @param widget      内容控件（宿主控件 / 网页视图 / PPT 容器）
+     * @param app         应用配置
+     * @param insertIndex 插入位置，小于 0 时追加到末尾；已存在同 id 标签时原地替换
+     */
+    void addWindowToTabWidget(QWidget *widget, AppConfig &app, int insertIndex = -1);
+    void startAndPlayPpt(AppConfig &app, int insertIndex = -1);
+    void playPpt(QAxWidget *ppt, QAxObject *presentation, QAxObject *slideShowWindow, AppConfig &app,
+                 int insertIndex = -1, PptSession *session = nullptr);
+    /**
+     * @brief PPT 循环守护：轮询放映视图状态，消除每轮结尾的"结束放映"黑屏
+     *
+     * WPS/PowerPoint 在循环放映模式下，放完最后一页会先进入黑屏再回到第一页。
+     * 本方法由 50ms 定时器周期调用：一旦检测到黑屏（3）或白屏（4），立即恢复放映并跳到第一页；
+     * 检测到放映窗口已关闭时重新发起放映；检测到放映结束（5）时重建一次放映会话。
+     *
+     * @param ppt                承载放映的 COM 控件
+     * @param presentation       已打开的演示文稿
+     * @param slideShowSettings  放映设置对象，重新发起放映时需要
+     * @param app                应用配置副本，用于重新发起放映时定位窗口
+     * @param insertIndex        标签插入位置
+     */
+    void guardPptLoop(QAxWidget *ppt, QAxObject *presentation, QAxObject *slideShowSettings,
+                      const AppConfig &app, int insertIndex);
+
+    /**
+     * @brief 构造标签显示文本
+     * @param app 应用配置
+     * @return 含可选的屏幕序号前缀的标签文本
+     */
+    QString buildTabTitle(const AppConfig &app) const;
+    /**
+     * @brief 按软件 id 查找标签页索引
+     * @param appId 软件 id
+     * @return 标签索引，未找到返回 -1
+     */
+    int findTabIndexByAppId(const QString &appId) const;
+    /**
+     * @brief 获取当前标签对应的软件 id
+     * @return 软件 id，当前无标签时返回空字符串
+     */
+    QString currentAppId() const;
+    /**
+     * @brief 依据 ui->tabWidget 的标签顺序重建悬浮标签栏，并保持当前选中项
+     */
+    void syncFloatingTabBar();
+    /**
+     * @brief 结束并清理指定 PPT 放映会话
+     * @param appId 软件 id
+     */
+    void stopPptSession(const QString &appId);
 };
 #endif  // MAINWINDOW_H

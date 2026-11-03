@@ -17,6 +17,8 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 ## 2. 功能特性
 
 - **多屏全屏布局**：按屏幕几何位置（或主屏优先）排序，自动把配置中的第 N 号窗口放到第 N 块屏幕上，无边框全屏展示。
+- **可视化管理界面**：`Alt+M` 打开/隐藏管理窗口，支持软件清单管理（桌面程序/网页/PPT，可预览）、屏幕数量与布局管理、拖拽分配软件到屏幕、同屏多软件调整标签顺序；保存后立即热应用，无需重启。
+- **配置双格式**：`config.json` 是唯一数据源，保存时自动备份并导出兼容旧逻辑的 `config.ini`；`config.json` 不存在时自动回退读取 `config.ini`。
 - **屏幕序号标识**：可在每块屏幕右上角浮层显示屏幕编号（`show_index`），标签页标题同时带上屏幕序号，主屏以 `*` 前缀标识。
 - **全局热键切换**：`Alt+数字` 可在屏幕之间"对调"显示内容，`Alt+R` 一键复位到默认屏幕，`Alt+F5` 只重新加载鼠标所在屏幕当前标签页的应用，`Alt+Q` / `Alt+F4` 退出。
 - **悬浮标签栏**：屏幕顶部提供独立置顶的 `QTabBar`（可通过 `tab_offset_x` 微调水平位置），点击即可切换当前屏幕显示的应用。
@@ -47,6 +49,12 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 MultiDisplayControl/
 ├── MultiDisplayControl.pro      # qmake 工程文件（目标名、模块、输出目录、依赖库）
 ├── main.cpp                     # 程序入口：读配置、启动窗口、注册热键、启动定时任务
+├── ConfigStore.h/.cpp           # 配置读写：config.json 读写、config.ini 导出与旧配置回退
+├── DisplayRuntime.h/.cpp        # 运行时：按配置创建/更新屏幕窗口，保存后增量热更新
+├── ManagementWindow.h/.cpp      # 管理界面主窗口：三栏布局、保存/重新加载/热应用
+├── SoftwareLibraryPanel.h/.cpp  # 管理界面-软件清单面板（新增/编辑/删除/搜索/拖拽源）
+├── ScreenLayoutCanvas.h/.cpp    # 管理界面-屏幕布局画布（屏幕卡片、拖拽分配、标签排序）
+├── SoftwarePreviewPanel.h/.cpp  # 管理界面-预览面板（分层预览 + 网页实时预览）
 ├── ExternalAppWindow.h/.cpp     # 核心窗口类：单屏全屏窗口 + 标签页容器 + 应用/网页/PPT 加载
 ├── ExternalAppWindow.ui         # 窗口界面（centralwidget + QTabWidget）
 ├── ScreenConfig.h               # 配置数据结构：AppConfig / ScreenConfig / MultiScreenConfig
@@ -131,10 +139,11 @@ MultiDisplayControl/
 - `altAndF5Pressed()` — `Alt + F5`，重新加载鼠标所在屏幕当前标签页的应用
 - `quitKeyPressed(QString keyMessage)` — `Alt + Q` / `Alt + F4`
 - `helpKeyPressed()` — `Alt + H`，弹出/关闭快捷键说明浮层（置顶、无边框，点击浮层外部或按 Esc 关闭）
+- `manageKeyPressed()` — `Alt + M`，打开/隐藏多屏控制管理界面
 
 ## 7. 配置文件说明
 
-配置文件为可执行文件同目录下的 `config.ini`，由 `loadScreenConfig()` 解析（[main.cpp](file:///d:/sunzhenfeng/projects/MultiDisplayControl/main.cpp#L16-L86)）。
+程序优先读取可执行文件同目录下的 `config.json`（管理界面保存的唯一数据源）；若不存在，则回退读取旧格式 `config.ini`。管理界面保存时会先把已存在的文件备份为 `*.bak`，再写入 `config.json` 并同步导出 `config.ini`（供旧版本程序或人工查看）。
 
 ### 7.1 全局配置节 `[screen]`
 
@@ -205,6 +214,7 @@ app_1_startup_args=
 | `Alt+1` ~ `Alt+7`、`Alt+小键盘1` ~ `Alt+小键盘7` | 将第 N 号屏幕的内容切换到主屏显示（主屏与目标屏内容互换） |
 | `Alt+R` | 重新把所有窗口复位到各自的默认屏幕（不改变当前窗口内容） |
 | `Alt+F5` | 重新加载鼠标所在屏幕当前标签页的应用（外部程序重启、网页重新加载），其它标签页不受影响 |
+| `Alt+M` | 打开/隐藏多屏控制管理界面（软件清单、屏幕布局、拖拽分配、保存热应用） |
 | `Alt+H` | 显示/关闭快捷键说明浮层 |
 | `Alt+Q` / `Alt+F4` | 关闭所有窗口并退出程序 |
 
@@ -250,14 +260,13 @@ make            # Windows + MinGW 使用 mingw32-make；MSVC 使用 nmake / jom
 
 ## 10. 启动流程
 
-1. 设置 WebEngine 环境变量（关闭 `Win32kLockdown` 以避免 Win10 下 `QtWebEngineProcess.exe` 崩溃、开启 9222 远程调试端口）。
-2. 加载 `:/qss/dark.css` 设置全局深色主题。
-3. 解析 `config.ini` 生成 `MultiScreenConfig`。
-4. 如需管理员权限且当前非管理员，则提权重启自身。
-5. 若任一应用路径包含 `.ppt`，先结束 WPS 相关进程。
-6. 为每块屏幕创建 `ExternalAppWindow` 并调用 `loadApps()` 启动/嵌入内容，同时登记到 `GlobalVariants::winList`。
-7. 初始化全局热键监听，启动 Chrome 干扰窗口清理定时器（500ms）。
-8. 500ms 后执行一次 `reloadScreen()` 复位窗口位置，进入事件循环。
+1. 设置 CEF 运行环境（缓存目录 `cefCache` 等），加载 `:/qss/dark.css` 全局深色主题。
+2. `ConfigStore::load()` 读取配置：优先 `config.json`，缺失时回退 `config.ini`，生成 `MultiScreenConfig`。
+3. 如需管理员权限且当前非管理员，则提权重启自身。
+4. `DisplayRuntime::start()` 为每块屏幕创建 `ExternalAppWindow`，并行预启动外部程序后按配置顺序加载标签页，并登记到 `GlobalVariants::winList`。
+5. 创建 `ManagementWindow` 管理界面（默认隐藏），把 `Alt+M` 与管理界面显隐、保存后的增量热应用连接起来。
+6. 初始化全局热键监听，启动 Chrome 干扰窗口清理定时器（500ms）。
+7. 500ms 后执行一次 `reloadScreen()` 复位窗口位置，进入事件循环。
 
 ## 11. 已知问题与注意事项
 

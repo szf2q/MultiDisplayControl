@@ -28,6 +28,8 @@ class GlobalKeyWatcher : public QObject, public QAbstractNativeEventFilter
     void altAndRPressed(void);
     /** @brief Alt+H 被按下，用于弹出快捷键说明界面 */
     void helpKeyPressed(void);
+    /** @brief Alt+M 被按下，用于显示/隐藏多屏控制管理界面 */
+    void manageKeyPressed(void);
 };
 
 #endif  // GLOBALKEYWATCHER_H

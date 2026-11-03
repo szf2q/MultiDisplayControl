@@ -13,6 +13,9 @@ CefWebView::CefWebView(const QUrl &url, QWidget *parent) : QWidget(parent)
     // 说明：QCefView 内部会调用 QCefContext::instance()，因此使用前必须先在 main() 中
     //       创建 QCefContext 完成 CEF 初始化，否则此处会导致空指针解引用。
     const QString initialUrl = url.isEmpty() ? QStringLiteral("about:blank") : url.toString();
+    // 占位底色与深色主题保持一致：CEF 首帧渲染完成前露出的是深蓝黑，而不是纯白，
+    // 重载网页时不会出现白屏闪烁
+    setStyleSheet(QStringLiteral("background:#010A1B;"));
     cefView = new QCefView(initialUrl, nullptr, this);
     cefView->setGeometry(rect());
     // 窗口模式下 CEF 会创建真实原生子窗口，若该原生窗口在本控件尚未显示时就被创建，

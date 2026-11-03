@@ -1,10 +1,10 @@
 #include "ExternalAppWindow.h"
 
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
 
 #include "ui_ExternalAppWindow.h"
-
 
 ExternalAppWindow::ExternalAppWindow(ScreenConfig config, QWidget *parent) :
     QMainWindow(parent), ui(new Ui::ExternalAppWindow)
@@ -54,27 +54,28 @@ ExternalAppWindow::ExternalAppWindow(ScreenConfig config, QWidget *parent) :
     tabBar->setExpanding(false);
     tabBar->setGeometry(tabBarWidget->geometry().x(), tabBarWidget->geometry().y(), 500, 35);
     tabBarWidget->show();
+    // 悬浮标签栏与内容标签页只在这里连接一次，避免 initTabWidget 多次调用导致重复响应
+    QObject::connect(tabBar, &QTabBar::currentChanged, this, [this](int index) { tabIndexChanged(index); });
 
-    if (config.showIndex)
-    {
-        screenIndexWidget = new QWidget(this);
-        screenIndexWidget->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
-        screenIndexWidget->setAttribute(Qt::WA_TranslucentBackground);
-        screenIndexWidget->setAttribute(Qt::WA_AlwaysStackOnTop);
-        screenIndexWidget->setMinimumSize(90, 90);
-        screenIndexLbl = new QLabel("", screenIndexWidget);
-        screenIndexLbl->setAttribute(Qt::WA_TransparentForMouseEvents);
-        screenIndexLbl->setAttribute(Qt::WA_AlwaysStackOnTop);
-        screenIndexLbl->setStyleSheet("color:#11C0FE;"
-                                      "font-size:48px;"
-                                      "font-family:微软雅黑;"
-                                      "font-weight:bold;"
-                                      "background-color:rgba(21,191,251,80);"
-                                      "border-radius:45px;");
-        screenIndexLbl->setAlignment(Qt::AlignCenter);
-        screenIndexLbl->setMinimumSize(90, 90);
-        screenIndexWidget->show();
-    }
+    // 序号浮层始终创建，是否显示由 config.showIndex 控制：
+    // 这样运行时热更新打开/关闭“显示屏幕序号”时无需重建控件
+    screenIndexWidget = new QWidget(this);
+    screenIndexWidget->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
+    screenIndexWidget->setAttribute(Qt::WA_TranslucentBackground);
+    screenIndexWidget->setAttribute(Qt::WA_AlwaysStackOnTop);
+    screenIndexWidget->setMinimumSize(90, 90);
+    screenIndexLbl = new QLabel("", screenIndexWidget);
+    screenIndexLbl->setAttribute(Qt::WA_TransparentForMouseEvents);
+    screenIndexLbl->setAttribute(Qt::WA_AlwaysStackOnTop);
+    screenIndexLbl->setStyleSheet("color:#11C0FE;"
+                                  "font-size:48px;"
+                                  "font-family:微软雅黑;"
+                                  "font-weight:bold;"
+                                  "background-color:rgba(21,191,251,80);"
+                                  "border-radius:45px;");
+    screenIndexLbl->setAlignment(Qt::AlignCenter);
+    screenIndexLbl->setMinimumSize(90, 90);
+    screenIndexWidget->setVisible(config.showIndex);
 
     processUtils = ProcessFactory::newInstance();
     this->initWindow();
@@ -135,7 +136,8 @@ void ExternalAppWindow::initWindow()
 }
 void ExternalAppWindow::displayScreenIndex()
 {
-    if (config.showIndex)
+    // 序号浮层始终存在，文字始终同步，是否显示由 showIndex 单独控制
+    if (screenIndexLbl != nullptr)
     {
         screenIndexLbl->setText(QString("%1").arg(this->config.screenIndex));
     }
@@ -174,11 +176,13 @@ void ExternalAppWindow::setScreen(QScreen *screen, bool force)
     Sleep(50);
     this->showFullScreen();
 
+    const QString activeAppId = currentAppId();
     for (int i = 0; i < externalAppList.size(); i++)
     {
         if (externalAppList[i].externalWindow != nullptr)
         {
-            if (externalAppList[i].tabName == tabBar->tabText(tabBar->currentIndex()))
+            // 优先按软件 id 匹配当前标签，避免重排或重名标签导致尺寸同步到错误窗口
+            if (!activeAppId.isEmpty() && externalAppList[i].appId == activeAppId)
             {
                 externalAppList[i].externalWindow->setGeometry(0, 0, rect.width(), rect.height());
                 break;
@@ -225,15 +229,15 @@ void ExternalAppWindow::loadApps(bool isReload)
             if (config.appList[i - 1].appPath.startsWith("http://") ||
                 config.appList[i - 1].appPath.startsWith("https://"))
             {
-                loadWebPage(config.appList[i - 1]);
+                loadWebPage(config.appList[i - 1], i - 1);
             }
             else if (config.appList[i - 1].appPath.contains(".ppt"))
             {
-                startAndPlayPpt(config.appList[i - 1]);
+                startAndPlayPpt(config.appList[i - 1], i - 1);
             }
             else
             {
-                startExternalProgram(config.appList[i - 1], isReload);
+                startExternalProgram(config.appList[i - 1], isReload, i - 1);
             }
         }
     }
@@ -309,14 +313,10 @@ void ExternalAppWindow::initTabWidget()
         }
     }
 
-    if (ui->tabWidget->count() <= 1 && config.debugMode == false)
-    {
-        this->tabBarWidget->hide();
-        return;
-    }
-
-    QObject::connect(tabBar, &QTabBar::currentChanged, [=](int index) { tabIndexChanged(index); });
-    tabIndexChanged(0);
+    // 统一由 syncFloatingTabBar 维护悬浮标签栏的可见性与内容：
+    // 普通模式只有多个标签时才需要悬浮标签栏，调试模式始终保留
+    syncFloatingTabBar();
+    tabIndexChanged(ui->tabWidget->currentIndex());
 }
 void ExternalAppWindow::tabIndexChanged(int index)
 {
@@ -329,31 +329,33 @@ void ExternalAppWindow::tabIndexChanged(int index)
     ui->tabWidget->update();
     ui->tabWidget->adjustSize();
 
+    // 当前标签对应的软件 id 是显隐外部窗口的唯一依据，避免标签名重复或重排后匹配错位
+    QWidget *page = ui->tabWidget->widget(index);
+    const QString activeAppId = page != nullptr ? page->property("mdcAppId").toString() : QString();
+
     for (int i = 0; i < externalAppList.size(); i++)
     {
         if (externalAppList[i].externalWindow == nullptr)
         {
             continue;
         }
-        //        HWND childHwnd;
+        bool isActive = false;
+        if (!activeAppId.isEmpty())
+        {
+            isActive = (externalAppList[i].appId == activeAppId);
+        }
+        else
+        {
+            // 兼容早期没有 appId 的登记项
+            isActive = (externalAppList[i].tabName == ui->tabWidget->tabText(index));
+        }
+
         // TODO: chrome窗口强制隐藏后，无法重新显示，暂未解决
-        if (externalAppList[i].tabName == tabBar->tabText(tabBar->currentIndex()))
+        if (isActive)
         {
             if (externalAppList[i].processName.contains("chrome.exe"))
             {
                 ShowWindow(externalAppList[i].hwnd, true);
-                //                childHwnd = FindWindowExA(externalAppList[i].hwnd, NULL, "Intermediate D3D Window",
-                //                NULL); if (childHwnd != NULL && childHwnd != 0x0)
-                //                {
-                //                    ShowWindow(childHwnd, true);
-                //                }
-                //                childHwnd = FindWindowExA(externalAppList[i].hwnd, NULL,
-                //                "Chrome_RenderWidgetHostHWND", NULL); if (childHwnd != NULL && childHwnd != 0x0)
-                //                {
-                //                    ShowWindow(childHwnd, true);
-                //                }
-                //                SetForegroundWindow(externalAppList[i].hwnd);
-                //                externalAppList[i].externalWindow->setFlags(Qt::FramelessWindowHint | Qt::Tool);
                 externalAppList[i].externalWindow->showFullScreen();
             }
             else
@@ -368,16 +370,6 @@ void ExternalAppWindow::tabIndexChanged(int index)
             if (externalAppList[i].processName.contains("chrome.exe"))
             {
                 ShowWindow(externalAppList[i].hwnd, false);
-                //                childHwnd = FindWindowExA(externalAppList[i].hwnd, NULL, "Intermediate D3D Window",
-                //                NULL); if (childHwnd != NULL && childHwnd != 0x0)
-                //                {
-                //                    ShowWindow(childHwnd, false);
-                //                }
-                //                childHwnd = FindWindowExA(externalAppList[i].hwnd, NULL,
-                //                "Chrome_RenderWidgetHostHWND", NULL); if (childHwnd != NULL && childHwnd != 0x0)
-                //                {
-                //                    ShowWindow(childHwnd, false);
-                //                }
             }
         }
     }
@@ -429,8 +421,9 @@ void ExternalAppWindow::reloadCurrentTab()
         {
             continue;
         }
+        // 重载期间标签会被原位重建，重建逻辑保证不改变当前选中项，这里无需再做索引恢复，
+        // 只需按当前标签重新同步一次内容区显隐
         reloadApp(config.appList[i]);
-        // 重载只替换当前标签的控件，这里重新同步一次显隐与尺寸
         tabIndexChanged(tabBar->currentIndex());
         return;
     }
@@ -465,7 +458,9 @@ void ExternalAppWindow::stopExternalApp(AppConfig &app)
     for (int i = externalAppList.size() - 1; i >= 0; i--)
     {
         ProcessInfo info = externalAppList[i];
-        if (info.processPath != app.appPath)
+        // 优先按软件 id 精确匹配；早期没有 appId 的登记项回退按路径匹配
+        bool matched = !app.id.isEmpty() ? (info.appId == app.id) : (info.processPath == app.appPath);
+        if (!matched)
         {
             continue;
         }
@@ -497,7 +492,7 @@ void ExternalAppWindow::stopExternalApp(AppConfig &app)
     }
 }
 
-void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
+void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload, int insertIndex)
 {
     if (!isReload)
     {
@@ -532,36 +527,17 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
         qDebug() << "externanlWindow = " << externanlWindow << ", wid = " << externanlWindow->winId();
         externanlWindow->setParent(this->windowHandle());
         externanlWindow->setGeometry(0, 0, this->geometry().width(), this->geometry().height());
-        process.externalWindow = externanlWindow;
-        QString tabTitle = app.tabName;
-        if (config.showIndex)
-        {
-            tabTitle =
-                QString("%1%2-%3").arg(this->isPrimaryScreen ? "*" : "").arg(config.screenIndex).arg(app.tabName);
-        }
-        tabBar->addTab(tabTitle);
-        ui->tabWidget->addTab(new QTabWidget(), tabTitle);
-        ui->tabWidget->setCurrentIndex(0);
-        app.tabIndex = tabBar->count() - 1;
-        // findProcessInfo 已将本 app 的进程信息追加到 externalAppList，此处不再重复追加；
-        // 只需把已登记项的 tabName 同步为与 tabBar 文本一致的带序号前缀标题，
-        // 否则 show_index=true 时按标签名匹配会恒不成立，导致切页时该窗口被误隐藏（标签空白）。
-        process.tabName = tabTitle;
-        bool isRegistered = false;
+        // findProcessInfo 已将本应用的进程信息按 appId 追加到 externalAppList，
+        // 这里只补充 Qt 窗口包装，标签创建交给统一的 addWindowToTabWidget 处理
         for (int i = 0; i < externalAppList.size(); i++)
         {
-            if (externalAppList[i].tabName == app.tabName)
+            if (!app.id.isEmpty() && externalAppList[i].appId == app.id)
             {
-                externalAppList[i].tabName = tabTitle;
                 externalAppList[i].externalWindow = externanlWindow;
-                isRegistered = true;
                 break;
             }
         }
-        if (!isRegistered)
-        {
-            externalAppList.append(process);
-        }
+        addWindowToTabWidget(new QTabWidget(), app, insertIndex);
         // 窗体所有权已由本对象析构函数统一释放，这里不再注册 aboutToQuit 回收，避免重复释放
         return;
     }
@@ -602,10 +578,10 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
     // 该外部窗口不交给 Qt 管理（externalWindow 保持为空）：
     // 这样 tabIndexChanged/setScreen 中的显隐与几何同步逻辑会跳过它，
     // 显隐完全由 Windows 依据宿主控件的可见性自动处理。
-    addWindowToTabWidget(host, app);
+    addWindowToTabWidget(host, app, insertIndex);
 }
 
-void ExternalAppWindow::loadWebPage(AppConfig &app)
+void ExternalAppWindow::loadWebPage(AppConfig &app, int insertIndex)
 {
     QString url = app.appPath;
     qDebug() << "load web page by QCefView, url = " << url;
@@ -613,10 +589,10 @@ void ExternalAppWindow::loadWebPage(AppConfig &app)
     // 因此这里不再按应用维度创建独立 profile 做缓存/Cookie 隔离。
     // 直接把真实地址交给 CefWebView 构造，避免“about:blank → 真实地址”的二次导航
     CefWebView *cefWebView = new CefWebView(QUrl(url));
-    addWindowToTabWidget(cefWebView, app);
+    addWindowToTabWidget(cefWebView, app, insertIndex);
 }
 
-void ExternalAppWindow::startAndPlayPpt(AppConfig &app)
+void ExternalAppWindow::startAndPlayPpt(AppConfig &app, int insertIndex)
 {
     qDebug("开始播放PPT");
     QAxWidget *ppt = new QAxWidget();
@@ -628,6 +604,7 @@ void ExternalAppWindow::startAndPlayPpt(AppConfig &app)
         if (ppt->isNull())
         {
             qDebug() << "未安装PowerPoint";
+            delete ppt;
             return;
         }
     }
@@ -642,58 +619,88 @@ void ExternalAppWindow::startAndPlayPpt(AppConfig &app)
     {
         qDebug() << "打开ppt失败, path = " << app.appPath;
         ppt->dynamicCall("Quit()");
+        delete ppt;
         return;
     }
     QAxObject *slideShowSettings = presentation->querySubObject("SlideShowSettings");
-    if (slideShowSettings->isNull())
+    // querySubObject 失败时会返回空指针（例如文档尚未加载完成），
+    // 必须先判空再调用 isNull，否则会对空指针解引用直接崩溃
+    if (slideShowSettings == nullptr || slideShowSettings->isNull())
     {
         qDebug() << "执行SlideShowSettings失败";
         presentation->dynamicCall("Close()");
         ppt->dynamicCall("Quit()");
+        delete ppt;
         return;
     }
-    slideShowSettings->setProperty("ShowPresenterView", false);
-    slideShowSettings->setProperty("ShowMediaControls", false);
-    slideShowSettings->setProperty("LoopUntilStopped", true);
-    slideShowSettings->setProperty("AdvanceMode", 1);
-    slideShowSettings->setProperty("ShowWithAnimation", true);
-    slideShowSettings->setProperty("ShowWithNarration", false);
-    slideShowSettings->setProperty("ShowWithSlideShow", true);
+    // MsoTriState 类型的属性统一传整型 msoTrue(-1)/msoFalse(0)：
+    // 实测传 bool 时 WPS 会忽略写入（放映过程中读回 LoopUntilStopped 仍为 0），
+    // 导致放完最后一页直接结束放映、出现"结束放映"黑屏，再被守护定时器重新拉起。
+    slideShowSettings->setProperty("ShowPresenterView", QVariant(0));
+    slideShowSettings->setProperty("ShowMediaControls", QVariant(0));
+    slideShowSettings->setProperty("LoopUntilStopped", QVariant(-1));
+    slideShowSettings->setProperty("AdvanceMode", QVariant(1));
+    slideShowSettings->setProperty("ShowWithAnimation", QVariant(-1));
+    slideShowSettings->setProperty("ShowWithNarration", QVariant(0));
+    slideShowSettings->setProperty("ShowWithSlideShow", QVariant(-1));
+    qDebug() << "ppt LoopUntilStopped = " << slideShowSettings->property("LoopUntilStopped")
+             << ", AdvanceMode = " << slideShowSettings->property("AdvanceMode");
 
-    playPpt(ppt, presentation, slideShowSettings, app);
+    // 记录放映会话：供热更新移除 PPT 时主动结束放映并释放 COM 对象
+    PptSession session;
+    session.control = ppt;
+    session.presentation = presentation;
+    playPpt(ppt, presentation, slideShowSettings, app, insertIndex, &session);
 
     // 定时器以本对象为父对象，随窗体销毁而停止并释放，避免无父对象造成的内存泄漏
     QTimer *timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, [=]() {
-        QAxObject *tmpWins = ppt->querySubObject("SlideShowWindows");
-        int winCount = tmpWins->property("Count").toInt();
-        if (winCount > 0)
-        {
-            return;
-        }
-        AppConfig tmpApp = app;
-        playPpt(ppt, presentation, slideShowSettings, tmpApp);
-    });
-    timer->start(100);
+    session.timer = timer;
+    // 捕获配置副本而不是引用：配置可能在热更新过程中被修改或移除
+    const AppConfig appCopy = app;
+    connect(timer, &QTimer::timeout, this, [=]() { guardPptLoop(ppt, presentation, slideShowSettings, appCopy, insertIndex); });
+    // 轮询间隔取 50ms：黑屏停留时间最长为一次轮询周期，肉眼基本不可见
+    timer->start(50);
+
+    if (!app.id.isEmpty())
+    {
+        pptSessions.insert(app.id, session);
+    }
 }
 
-void ExternalAppWindow::playPpt(QAxWidget *ppt, QAxObject *presentation, QAxObject *slideShowSettings, AppConfig &app)
+void ExternalAppWindow::playPpt(QAxWidget *ppt, QAxObject *presentation, QAxObject *slideShowSettings,
+                                AppConfig &app, int insertIndex, PptSession *session)
 {
     QAxObject *slideShowWindow = slideShowSettings->querySubObject("Run");
-    if (slideShowWindow->isNull())
+    // Run 失败时 querySubObject 会返回空指针，必须先判空再解引用，否则会直接崩溃
+    if (slideShowWindow == nullptr || slideShowWindow->isNull())
     {
         qDebug() << "执行Run失败";
+        delete slideShowWindow;
         presentation->dynamicCall("Close()");
         ppt->dynamicCall("Quit()");
         return;
     }
+    // 个别版本在启动放映时会用文档里的设置覆盖之前写入的值，
+    // 这里再写一次循环放映，保证放映到最后一页后自动回到第一页而不是结束放映
+    slideShowSettings->setProperty("LoopUntilStopped", QVariant(-1));
     QAxObject *view = slideShowWindow->querySubObject("View");
+    if (view == nullptr || view->isNull())
+    {
+        qDebug() << "获取放映视图失败";
+        delete view;
+        return;
+    }
     view->setProperty("ViewType", 1);
     Sleep(1000);
-    connect(qApp, &QApplication::aboutToQuit, [=]() {
-        presentation->dynamicCall("Close()");
-        ppt->dynamicCall("Quit()");
-    });
+    if (session != nullptr)
+    {
+        // 保存清理连接，热移除该 PPT 时可断开，避免程序退出时访问已释放的 COM 对象
+        session->quitConnection =
+            connect(qApp, &QApplication::aboutToQuit, qApp, [presentation, ppt]() {
+                presentation->dynamicCall("Close()");
+                ppt->dynamicCall("Quit()");
+            });
+    }
 
     QVector<ProcessInfo> processList;
     int count = 0;
@@ -717,6 +724,8 @@ void ExternalAppWindow::playPpt(QAxWidget *ppt, QAxObject *presentation, QAxObje
     }
     ProcessInfo process = processList[0];
     process.tabName = app.tabName;
+    // 记录软件 id，供热更新时按 id 结束放映窗口
+    process.appId = app.id;
     externalAppList.append(process);
     processList.clear();
     //获取待嵌入的外部应用窗口
@@ -733,7 +742,67 @@ void ExternalAppWindow::playPpt(QAxWidget *ppt, QAxObject *presentation, QAxObje
     //设置外部应用窗口的尺寸到最大
     QRect rect = currentScreen->geometry();
     pptWindow->setGeometry(0, 0, rect.width(), rect.height());
-    addWindowToTabWidget(container, app);
+    addWindowToTabWidget(container, app, insertIndex);
+}
+
+void ExternalAppWindow::guardPptLoop(QAxWidget *ppt, QAxObject *presentation, QAxObject *slideShowSettings,
+                                     const AppConfig &app, int insertIndex)
+{
+    // 放映视图状态（对应 PowerPoint/WPS 的 PpSlideShowState 枚举）
+    const int pptStateRunning = 1;      // 正在放映
+    const int pptStateBlackScreen = 3;  // 黑屏（按 B 或放映结束时的黑屏）
+    const int pptStateWhiteScreen = 4;  // 白屏（按 W）
+
+    // 注意：querySubObject 返回的对象会以“调用者”为父对象，
+    // 删除父对象会连带销毁子对象。因此必须先读完子对象数据，再按“子→父”的顺序释放，
+    // 否则会出现父对象已删除、子对象指针悬空导致的访问违例崩溃。
+    QAxObject *showWindows = ppt->querySubObject("SlideShowWindows");
+    if (showWindows == nullptr || showWindows->isNull())
+    {
+        delete showWindows;
+        return;
+    }
+    const int windowCount = showWindows->property("Count").toInt();
+    if (windowCount <= 0)
+    {
+        // 放映窗口已被关闭（例如误按 Esc），重新开始一次放映；定时器本身继续复用，避免重复创建
+        delete showWindows;
+        AppConfig appCopy = app;
+        playPpt(ppt, presentation, slideShowSettings, appCopy, insertIndex, nullptr);
+        return;
+    }
+
+    QAxObject *showWindow = showWindows->querySubObject("Item(int)", 1);
+    if (showWindow == nullptr || showWindow->isNull())
+    {
+        delete showWindow;
+        delete showWindows;
+        return;
+    }
+    QAxObject *view = showWindow->querySubObject("View");
+    if (view == nullptr || view->isNull())
+    {
+        delete view;
+        delete showWindow;
+        delete showWindows;
+        return;
+    }
+
+    // 放映到最后一页后若仍出现黑屏/白屏，说明循环放映没有被放映程序本身接管，
+    // 这里立刻恢复放映并跳回第一页，最多只闪一次轮询周期（50ms），肉眼基本不可见。
+    // 说明：该守护用于无人值守的大屏循环播放，若有人按 B/W 主动切黑屏也会被还原。
+    const int state = view->property("State").toInt();
+    if (state == pptStateBlackScreen || state == pptStateWhiteScreen)
+    {
+        // 先退出黑屏/白屏状态恢复放映，再跳回第一页；顺序颠倒时视图仍处于黑屏，跳页会被忽略
+        view->setProperty("State", pptStateRunning);
+        view->dynamicCall("First()");
+    }
+    // 状态 5（放映已结束）不在这里重新拉起：放映结束后放映窗口随即被销毁，
+    // 由下一次轮询命中 Count<=0 分支统一重新发起放映，避免对已失效的视图发指令导致崩溃
+    delete view;
+    delete showWindow;
+    delete showWindows;
 }
 
 bool ExternalAppWindow::eventFilter(QObject *watched, QEvent *event)
@@ -787,72 +856,493 @@ void ExternalAppWindow::startNativeHostFitTimer()
     nativeHostFitTimer->start();
 }
 
-void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app)
+void ExternalAppWindow::addWindowToTabWidget(QWidget *widget, AppConfig &app, int insertIndex)
 {
     QRect rect = currentScreen->geometry();
     //设置容器窗口的尺寸到最大
     widget->setGeometry(0, 0, rect.width(), rect.height());
     widget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     widget->setToolTip(app.appPath);
-    widget->setStyleSheet("border:none;background-color:blue;background:blue;");
-    //将容器窗口添加到Tab中
-    QString tabTitle = app.tabName;
-    if (config.showIndex)
+    // 占位底色使用与深色主题一致的深蓝黑：外部窗口/网页渲染完成前不会闪出纯蓝或纯白，
+    // 重载或切换标签时视觉过渡更平滑
+    widget->setStyleSheet("border:none;background:#010A1B;");
+    // 在页面控件上记录软件 id：切页显隐、重排标签、热更新都依赖该属性和 appId 稳定匹配，
+    // 不再使用可能重复或被修改的标签文本
+    if (!app.id.isEmpty())
     {
-        tabTitle = QString("%1%2-%3").arg(this->isPrimaryScreen ? "*" : "").arg(config.screenIndex).arg(app.tabName);
+        widget->setProperty("mdcAppId", app.id);
     }
+    //将容器窗口添加到Tab中
+    const QString tabTitle = buildTabTitle(app);
     qDebug() << "tabTitle = " << tabTitle;
-    int findTabIndex = -1;
-    for (int i = 0; i < ui->tabWidget->count(); i++)
+    int findTabIndex = findTabIndexByAppId(app.id);
+    if (findTabIndex < 0 && app.id.isEmpty())
     {
-        if (ui->tabWidget->tabText(i) == tabTitle)
+        // 兼容早期没有软件 id 的配置：退化为按标签文本匹配
+        for (int i = 0; i < ui->tabWidget->count(); i++)
         {
-            findTabIndex = i;
-            break;
+            if (ui->tabWidget->tabText(i) == tabTitle)
+            {
+                findTabIndex = i;
+                break;
+            }
         }
     }
     qDebug() << "findTabIndex = " << findTabIndex;
     // 将已登记进程项的 tabName 同步为该 app 实际使用的标签文本（含 show_index 时的序号前缀），
-    // 保证切页时按标签名匹配显示/隐藏的判断成立
+    // 保证兼容旧匹配逻辑时判断成立
     for (int i = 0; i < externalAppList.size(); i++)
     {
-        if (externalAppList[i].tabName == app.tabName)
+        bool matched = !app.id.isEmpty() ? (externalAppList[i].appId == app.id)
+                                         : (externalAppList[i].tabName == app.tabName);
+        if (matched)
         {
             externalAppList[i].tabName = tabTitle;
         }
     }
     if (findTabIndex >= 0)
     {
-        // 取出旧控件后再移除标签：QTabWidget::removeTab 只是解除管理、不会销毁控件，
-        // 重载时若不显式释放，旧的网页视图或宿主控件会一直残留在内存中
+        // 先用“插入新标签 → 移除旧标签”的方式原位替换，而不是“移除 → 插入”：
+        // 移除当前选中项时 Qt 会自动改选相邻标签并触发切页，导致重载后标签跳变；
+        // 先插入时当前项只是索引后移一位，选中状态保持不变
         QWidget *oldWidget = ui->tabWidget->widget(findTabIndex);
-        ui->tabWidget->removeTab(findTabIndex);
+        ui->tabWidget->insertTab(findTabIndex, widget, tabTitle);
+        ui->tabWidget->removeTab(findTabIndex + 1);
         if (oldWidget != nullptr)
         {
+            // QTabWidget::removeTab 只是解除管理、不会销毁控件，
+            // 重载时若不显式释放，旧的网页视图或宿主控件会一直残留在内存中
             oldWidget->deleteLater();
         }
-        ui->tabWidget->insertTab(findTabIndex, widget, tabTitle);
-        // 同步维护悬浮标签栏，避免 ui->tabWidget 与 tabBar 的标签数量/顺序不一致导致切页索引错位
-        if (findTabIndex < tabBar->count())
+        if (!app.id.isEmpty())
         {
-            tabBar->removeTab(findTabIndex);
-            tabBar->insertTab(findTabIndex, tabTitle);
+            appTabWidgets.insert(app.id, widget);
         }
     }
     else
     {
-        ui->tabWidget->addTab(widget, tabTitle);
-        tabBar->addTab(tabTitle);
-        ui->tabWidget->setCurrentIndex(0);
+        int pos = insertIndex;
+        if (pos < 0 || pos > ui->tabWidget->count())
+        {
+            pos = ui->tabWidget->count();
+        }
+        ui->tabWidget->insertTab(pos, widget, tabTitle);
+        if (!app.id.isEmpty())
+        {
+            appTabWidgets.insert(app.id, widget);
+        }
+        // 只在第一个标签时切换到它；热更新追加标签时保持现场当前页面不变
+        if (ui->tabWidget->count() == 1)
+        {
+            ui->tabWidget->setCurrentIndex(0);
+        }
         for (int i = 0; i < config.appList.count(); i++)
         {
-            if (config.appList[i].appPath == app.appPath)
+            bool matched = !app.id.isEmpty() ? (config.appList[i].id == app.id)
+                                             : (config.appList[i].appPath == app.appPath);
+            if (matched)
             {
                 qDebug() << "app index = " << i + 1;
-                config.appList[i].tabIndex = ui->tabWidget->count() - 1;
+                config.appList[i].tabIndex = ui->tabWidget->indexOf(widget);
                 break;
             }
         }
+    }
+    // 悬浮标签栏与内容标签页保持完全一致，并按当前页重新同步外部窗口显隐
+    syncFloatingTabBar();
+    tabIndexChanged(ui->tabWidget->currentIndex());
+}
+
+QString ExternalAppWindow::buildTabTitle(const AppConfig &app) const
+{
+    if (config.showIndex)
+    {
+        return QString("%1%2-%3").arg(this->isPrimaryScreen ? "*" : "").arg(config.screenIndex).arg(app.tabName);
+    }
+    return app.tabName;
+}
+
+int ExternalAppWindow::findTabIndexByAppId(const QString &appId) const
+{
+    if (appId.isEmpty())
+    {
+        return -1;
+    }
+    for (int i = 0; i < ui->tabWidget->count(); i++)
+    {
+        QWidget *page = ui->tabWidget->widget(i);
+        if (page != nullptr && page->property("mdcAppId").toString() == appId)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+QString ExternalAppWindow::currentAppId() const
+{
+    QWidget *page = ui->tabWidget->currentWidget();
+    if (page == nullptr)
+    {
+        return QString();
+    }
+    return page->property("mdcAppId").toString();
+}
+
+QStringList ExternalAppWindow::appIdsInTabOrder() const
+{
+    QStringList ids;
+    for (int i = 0; i < ui->tabWidget->count(); i++)
+    {
+        QWidget *page = ui->tabWidget->widget(i);
+        if (page == nullptr)
+        {
+            continue;
+        }
+        const QString appId = page->property("mdcAppId").toString();
+        if (!appId.isEmpty())
+        {
+            ids << appId;
+        }
+    }
+    return ids;
+}
+
+bool ExternalAppWindow::hasApp(const QString &appId) const
+{
+    return findTabIndexByAppId(appId) >= 0;
+}
+
+void ExternalAppWindow::syncFloatingTabBar()
+{
+    if (tabBar == nullptr || tabBarWidget == nullptr)
+    {
+        return;
+    }
+    const int currentIndex = ui->tabWidget->currentIndex();
+    {
+        // 重建期间屏蔽信号：否则逐项增删会触发 currentChanged，
+        // 导致外部窗口被反复隐藏/显示，出现闪烁甚至切错标签
+        const QSignalBlocker blocker(tabBar);
+        while (tabBar->count() > 0)
+        {
+            tabBar->removeTab(0);
+        }
+        for (int i = 0; i < ui->tabWidget->count(); i++)
+        {
+            tabBar->addTab(ui->tabWidget->tabText(i));
+        }
+        if (currentIndex >= 0 && currentIndex < tabBar->count())
+        {
+            tabBar->setCurrentIndex(currentIndex);
+        }
+    }
+    // 普通模式下只有多个标签才需要悬浮标签栏，调试模式始终显示
+    tabBarWidget->setVisible(config.debugMode || ui->tabWidget->count() > 1);
+}
+
+void ExternalAppWindow::applyScreenConfig(const ScreenConfig &cfg, QScreen *targetScreen)
+{
+    const bool showIndexChanged = (this->config.showIndex != cfg.showIndex);
+    this->config.screenIndex = cfg.screenIndex;
+    this->config.screenTitle = cfg.screenTitle;
+    this->config.showIndex = cfg.showIndex;
+    this->config.debugMode = cfg.debugMode;
+    this->config.tabOffsetX = cfg.tabOffsetX;
+
+    if (this->config.screenTitle.isEmpty())
+    {
+        this->setWindowTitle(QString("%1号屏").arg(this->config.screenIndex));
+    }
+    else
+    {
+        this->setWindowTitle(QString("%1号屏-%2").arg(this->config.screenIndex).arg(this->config.screenTitle));
+    }
+    this->displayScreenIndex();
+
+    // 只有当本窗口最初就处于调试模式时标签栏才隐藏，热更新切换调试模式时同步可见性
+    if (config.debugMode)
+    {
+        ui->tabWidget->tabBar()->show();
+    }
+
+    if (screenIndexWidget != nullptr)
+    {
+        screenIndexWidget->setVisible(this->config.showIndex);
+        // 显示序号时立即按当前屏幕位置重新摆放，避免浮层停在旧坐标
+        if (this->config.showIndex && this->currentScreen != nullptr)
+        {
+            QRect rect = this->currentScreen->geometry();
+            screenIndexWidget->move(rect.right() - 125, rect.top() + 25);
+        }
+    }
+
+    if (targetScreen != nullptr)
+    {
+        this->defaultScreen = targetScreen;
+        this->isPrimaryScreen = (targetScreen == QGuiApplication::primaryScreen());
+        // force 为 true：即使目标物理屏没变也要重新铺满，保证分辨率/位置变化后几何正确
+        this->setToDefaultScreen(true);
+    }
+
+    // 屏幕序号与“显示序号”开关都会影响标签前缀，统一刷新一次
+    if (showIndexChanged)
+    {
+        refreshTabTitles();
+    }
+    syncFloatingTabBar();
+}
+
+void ExternalAppWindow::addApp(const AppConfig &app, int insertIndex)
+{
+    // 复制一份配置：启动流程内部会修改配置对象，不能直接使用调用方的引用
+    AppConfig cfg = app;
+    if (cfg.appPath.startsWith("http://") || cfg.appPath.startsWith("https://"))
+    {
+        loadWebPage(cfg, insertIndex);
+        return;
+    }
+    if (cfg.appPath.contains(".ppt"))
+    {
+        startAndPlayPpt(cfg, insertIndex);
+        return;
+    }
+    startExternalProgram(cfg, false, insertIndex);
+}
+
+void ExternalAppWindow::removeApp(const QString &appId)
+{
+    if (appId.isEmpty())
+    {
+        return;
+    }
+    // PPT 的放映窗口由 COM 实例承载，不是普通进程，必须先结束放映会话
+    stopPptSession(appId);
+    // 结束外部进程并清理宿主控件映射，避免尺寸校正定时器访问已销毁控件
+    for (int i = externalAppList.size() - 1; i >= 0; i--)
+    {
+        ProcessInfo info = externalAppList[i];
+        if (info.appId != appId)
+        {
+            continue;
+        }
+        for (QHash<QWidget *, WId>::iterator it = nativeHostWindows.begin(); it != nativeHostWindows.end();)
+        {
+            if (it.value() == (WId)info.hwnd)
+            {
+                it = nativeHostWindows.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+        if (info.pid > 0)
+        {
+            qDebug() << "remove app, kill " << info.processName << ", pid = " << info.pid;
+            processUtils->killProcess(info.pid);
+        }
+        if (info.externalWindow != nullptr)
+        {
+            info.externalWindow->close();
+            delete info.externalWindow;
+        }
+        externalAppList.remove(i);
+    }
+    // 移除标签并显式释放内容控件（removeTab 不会销毁控件）
+    const int index = findTabIndexByAppId(appId);
+    if (index >= 0)
+    {
+        QWidget *page = ui->tabWidget->widget(index);
+        ui->tabWidget->removeTab(index);
+        if (page != nullptr)
+        {
+            page->deleteLater();
+        }
+    }
+    appTabWidgets.remove(appId);
+    // 同步本窗口的配置副本，保证后续重排与标题刷新使用最新的应用列表
+    for (int i = this->config.appList.size() - 1; i >= 0; i--)
+    {
+        if (this->config.appList[i].id == appId)
+        {
+            this->config.appList.removeAt(i);
+        }
+    }
+    this->config.appCount = this->config.appList.size();
+    syncFloatingTabBar();
+    tabIndexChanged(ui->tabWidget->currentIndex());
+}
+
+void ExternalAppWindow::reorderTabs(const QStringList &orderedAppIds)
+{
+    if (ui->tabWidget->count() < 2 || orderedAppIds.isEmpty())
+    {
+        return;
+    }
+    QWidget *currentPage = ui->tabWidget->currentWidget();
+    QList<QWidget *> pages;
+    QStringList titles;
+    QStringList ids;
+    for (int i = 0; i < ui->tabWidget->count(); i++)
+    {
+        QWidget *page = ui->tabWidget->widget(i);
+        pages << page;
+        titles << ui->tabWidget->tabText(i);
+        ids << (page != nullptr ? page->property("mdcAppId").toString() : QString());
+    }
+    // 先按目标顺序排列已存在的标签，未出现在目标列表中的标签保持原有相对顺序追加在后
+    QList<int> newOrder;
+    for (int i = 0; i < orderedAppIds.size(); i++)
+    {
+        for (int j = 0; j < ids.size(); j++)
+        {
+            if (ids[j] == orderedAppIds[i] && !newOrder.contains(j))
+            {
+                newOrder << j;
+            }
+        }
+    }
+    for (int i = 0; i < ids.size(); i++)
+    {
+        if (!newOrder.contains(i))
+        {
+            newOrder << i;
+        }
+    }
+    bool orderChanged = false;
+    for (int i = 0; i < newOrder.size(); i++)
+    {
+        if (newOrder[i] != i)
+        {
+            orderChanged = true;
+            break;
+        }
+    }
+    if (!orderChanged)
+    {
+        return;
+    }
+    {
+        // 重排期间屏蔽信号，避免摘除标签时触发切页把外部窗口反复隐藏/显示
+        const QSignalBlocker blocker(ui->tabWidget);
+        // 逐个摘下标签（不销毁控件），再按新顺序插回，避免重建内容导致网页重载或窗口解绑
+        while (ui->tabWidget->count() > 0)
+        {
+            ui->tabWidget->removeTab(0);
+        }
+        for (int i = 0; i < newOrder.size(); i++)
+        {
+            ui->tabWidget->addTab(pages[newOrder[i]], titles[newOrder[i]]);
+        }
+        if (currentPage != nullptr)
+        {
+            ui->tabWidget->setCurrentWidget(currentPage);
+        }
+    }
+    syncFloatingTabBar();
+    tabIndexChanged(ui->tabWidget->currentIndex());
+}
+
+void ExternalAppWindow::updateAppTabName(const QString &appId, const QString &tabName)
+{
+    const int index = findTabIndexByAppId(appId);
+    if (index < 0)
+    {
+        return;
+    }
+    // 同步本窗口配置副本，保证后续重排/前缀刷新使用最新名称
+    for (int i = 0; i < this->config.appList.size(); i++)
+    {
+        if (this->config.appList[i].id == appId)
+        {
+            this->config.appList[i].tabName = tabName;
+            break;
+        }
+    }
+    AppConfig tmp;
+    tmp.id = appId;
+    tmp.tabName = tabName;
+    const QString tabTitle = buildTabTitle(tmp);
+    ui->tabWidget->setTabText(index, tabTitle);
+    for (int i = 0; i < externalAppList.size(); i++)
+    {
+        if (externalAppList[i].appId == appId)
+        {
+            externalAppList[i].tabName = tabTitle;
+        }
+    }
+    syncFloatingTabBar();
+}
+
+void ExternalAppWindow::refreshTabTitles()
+{
+    for (int i = 0; i < ui->tabWidget->count(); i++)
+    {
+        QWidget *page = ui->tabWidget->widget(i);
+        if (page == nullptr)
+        {
+            continue;
+        }
+        const QString appId = page->property("mdcAppId").toString();
+        if (appId.isEmpty())
+        {
+            continue;
+        }
+        bool found = false;
+        AppConfig tmp;
+        for (int j = 0; j < this->config.appList.size(); j++)
+        {
+            if (this->config.appList[j].id == appId)
+            {
+                tmp = this->config.appList[j];
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            continue;
+        }
+        const QString tabTitle = buildTabTitle(tmp);
+        ui->tabWidget->setTabText(i, tabTitle);
+        for (int k = 0; k < externalAppList.size(); k++)
+        {
+            if (externalAppList[k].appId == appId)
+            {
+                externalAppList[k].tabName = tabTitle;
+            }
+        }
+    }
+    syncFloatingTabBar();
+}
+
+void ExternalAppWindow::stopPptSession(const QString &appId)
+{
+    if (!pptSessions.contains(appId))
+    {
+        return;
+    }
+    PptSession session = pptSessions.take(appId);
+    if (session.timer != nullptr)
+    {
+        session.timer->stop();
+        session.timer->deleteLater();
+    }
+    // 断开退出清理连接，避免本窗口销毁后 aboutToQuit 仍访问已释放的 COM 对象
+    if (session.quitConnection)
+    {
+        QObject::disconnect(session.quitConnection);
+    }
+    if (session.presentation != nullptr)
+    {
+        session.presentation->dynamicCall("Close()");
+        session.presentation->deleteLater();
+    }
+    if (session.control != nullptr)
+    {
+        session.control->dynamicCall("Quit()");
+        session.control->deleteLater();
     }
 }
 bool ExternalAppWindow::startProcess(AppConfig &app)
@@ -928,6 +1418,8 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
     process.processName = app.processName;
     process.processPath = app.appPath;
     process.tabName = app.tabName;
+    // 记录软件 id，供切页显隐与热更新精确匹配
+    process.appId = app.id;
     externalAppList.append(process);
     qDebug() << "pid = " << process.pid << ", HWND = " << process.hwnd << ", processName = " << process.processName
              << ", titleName = " << process.titleName << ", className = " << process.className
@@ -938,6 +1430,14 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
 ExternalAppWindow::~ExternalAppWindow()
 {
     qDebug() << "MainWindow destructor";
+    // 先结束所有 PPT 放映会话：断开 aboutToQuit 连接并释放 COM 对象，
+    // 避免本窗口销毁后播放守护定时器或退出回调继续访问已释放对象
+    const QStringList pptAppIds = pptSessions.keys();
+    for (int i = 0; i < pptAppIds.size(); i++)
+    {
+        stopPptSession(pptAppIds[i]);
+    }
+    pptSessions.clear();
     delete ui;
     for (int i = externalAppList.size() - 1; i >= 0; i--)
     {

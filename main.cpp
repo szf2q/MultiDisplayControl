@@ -12,83 +12,14 @@
 #include <QCefContext.h>
 #include <QCursor>
 #include <QtConcurrent/QtConcurrent>
+#include "ConfigStore.h"
+#include "DisplayRuntime.h"
 #include "ExternalAppWindow.h"
 #include "GlobalKeyWatcher.h"
 #include "GlobalVariants.h"
-#include "IniConfiguration.h"
+#include "ManagementWindow.h"
 #include "ScreenConfig.h"
 #include "ShortcutHelpDialog.h"
-MultiScreenConfig loadScreenConfig(QString path)
-{
-    MultiScreenConfig config;
-    IniConfiguration ini("config.ini", path);
-    QVariant screenCount = ini.getValue("screen", "count", 0);
-    QVariant showIndex = ini.getValue("screen", "show_index", true);
-    QVariant sortScreen = ini.getValue("screen", "sort_screen", true);
-    QVariant debugMode = ini.getValue("screen", "debug_mode", false);
-    QVariant runasAdmin = ini.getValue("screen", "runas_administrator", false);
-    config.count = screenCount.toInt();
-    config.showIndex = showIndex.toBool();
-    config.sortScreen = sortScreen.toBool();
-    config.debugMode = debugMode.toBool();
-    config.runAsAdministrator = runasAdmin.toBool();
-
-    for (int screenIndex = 1; screenIndex <= screenCount.toInt(); screenIndex++)
-    {
-        ScreenConfig screen;
-        QString section = QString("screen-%1").arg(screenIndex);
-        QVariant appCount = ini.getValue(section, "app_count", 0);
-        QVariant screenTitle = ini.getValue(section, "screen_title", "");
-        QVariant tabOffsetX = ini.getValue(section, "tab_offset_x", 0);
-        screen.appCount = appCount.toInt();
-        screen.screenTitle = screenTitle.toString();
-        screen.screenIndex = screenIndex;
-        screen.sortScreen = config.sortScreen;
-        screen.showIndex = config.showIndex;
-        screen.debugMode = debugMode.toBool();
-        screen.tabOffsetX = tabOffsetX.toInt();
-        if (screen.tabOffsetX < 0)
-        {
-            screen.tabOffsetX = 0;
-        }
-
-        for (int i = 1; i <= appCount.toInt(); i++)
-        {
-            QString keyPrefix = QString("app_%1").arg(i);
-            QVariant appPath = ini.getValue(section, keyPrefix + "_path", "");
-            QVariant appTitle = ini.getValue(section, keyPrefix + "_title", "");
-            QVariant appTabName = ini.getValue(section, keyPrefix + "_tab_name", "");
-            QVariant appStartupArgs = ini.getValue(section, keyPrefix + "_startup_args", "");
-            if (appPath.toString().isEmpty() || appTitle.toString().isEmpty())
-            {
-                continue;
-            }
-            AppConfig app;
-            app.appPath = appPath.toString();
-            if (!app.appPath.startsWith("https://") && !app.appPath.startsWith("http://"))
-            {
-                QFileInfo fileInfo(app.appPath);
-                app.processName = fileInfo.fileName();
-                app.appPath = app.appPath.replace("/", QDir::separator());
-            }
-            app.windowTitle = appTitle.toString();
-            app.tabName = appTabName.toString();
-            if (app.tabName.isEmpty())
-            {
-                app.tabName = app.windowTitle;
-            }
-            app.startupArgs = appStartupArgs.toString();
-            screen.appList.append(app);
-        }
-        screen.appCount = screen.appList.size();
-        if (screen.appCount > 0)
-        {
-            config.screenList.append(screen);
-        }
-    }
-    config.count = config.screenList.size();
-    return config;
-}
 void setAppStyle()
 {
     QFile file(":/qss/dark.css");
@@ -330,7 +261,14 @@ int main(int argc, char *argv[])
 
         setAppStyle();
 
-        MultiScreenConfig config = loadScreenConfig(QApplication::applicationDirPath());
+        // 配置统一由 ConfigStore 读取：优先 config.json，不存在时回退旧版 config.ini
+        MultiScreenConfig config;
+        QString configError;
+        if (!ConfigStore::load(QApplication::applicationDirPath(), &config, &configError))
+        {
+            qDebug() << "load config failed: " << configError;
+            return -1;
+        }
 
         if (config.runAsAdministrator)
         {
@@ -391,26 +329,9 @@ int main(int argc, char *argv[])
             delete utils;
         }
 
-        // 第一轮：创建各屏窗体，并先把每屏的外部程序全部并行拉起（不等待窗口出现），
-        // 使多屏、多程序之间的启动耗时相互重叠，而不是逐屏逐个串行等待
-        QVector<ExternalAppWindow *> createdWindows;
-        for (int i = 0; i < qMin(config.count, QGuiApplication::screens().count()); i++)
-        {
-            qDebug() << "start screen: " << i + 1 << ", app count = " << config.screenList[i].appCount;
-            ExternalAppWindow *win = new ExternalAppWindow(config.screenList[i]);
-            win->prestartApps();
-            // 使用 QString::number 显式构造十进制字符串键，避免 QString(int) 命中 QChar(int) 重载生成不可见控制字符键
-            QString key = QString::number(config.screenList[i].screenIndex);
-            GlobalVariants::winList.insert(key, win);
-            createdWindows.append(win);
-        }
-
-        // 第二轮：按屏依次完成网页加载与外部窗口嵌入（外部程序此时大多已就绪，等待时间大幅缩短）
-        for (int i = 0; i < createdWindows.size(); i++)
-        {
-            createdWindows[i]->loadApps(false);
-        }
-        createdWindows.clear();
+        // 由运行时统一创建各屏窗口：先并行预启动全部外部程序，再按配置顺序完成加载与嵌入
+        DisplayRuntime runtime;
+        runtime.start(config);
 
         Sleep(200);
         QTimer timer;
@@ -423,6 +344,18 @@ int main(int argc, char *argv[])
         reloadCurrentScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         closeAppsWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         shortcutHelpWatcher(GlobalKeyWatcher::watcher, shortcutHelpDialog);
+
+        // 管理界面：Alt+M 显示/隐藏；保存后调用运行时做增量热更新，并把结果回传到状态栏
+        ManagementWindow manager;
+        manager.setConfig(config);
+        QObject::connect(&GlobalKeyWatcher::watcher, &GlobalKeyWatcher::manageKeyPressed, &manager,
+                         [&manager]() { manager.toggle(); });
+        QObject::connect(&manager, &ManagementWindow::applyRequested, &manager,
+                         [&runtime, &manager](const MultiScreenConfig &newConfig) {
+                             QStringList warnings;
+                             runtime.apply(newConfig, &warnings);
+                             manager.notifyApplyResult(warnings);
+                         });
 
         QTimer::singleShot(500, [=]() { reloadScreen(GlobalVariants::winList); });
         return a.exec();

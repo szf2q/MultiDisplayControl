@@ -155,15 +155,17 @@ void ShortcutHelpDialog::buildUi()
     grid->setColumnMinimumWidth(0, 380);
     grid->setColumnStretch(1, 1);
 
-    addShortcutRow(grid, 0, QStringLiteral("Alt + H"),
+    addShortcutRow(grid, 0, QStringLiteral("Alt + M"),
+                   textUtf8("显示 / 关闭多屏控制管理界面（软件清单、屏幕布局与分配）"));
+    addShortcutRow(grid, 1, QStringLiteral("Alt + H"),
                    textUtf8("显示 / 关闭本快捷键说明"));
-    addShortcutRow(grid, 1, QStringLiteral("Alt + R"),
+    addShortcutRow(grid, 2, QStringLiteral("Alt + R"),
                    textUtf8("重新设置各窗体显示位置，全部复位到各自的默认屏幕"));
-    addShortcutRow(grid, 2, textUtf8("Alt + 1 ~ 7\nAlt + 小键盘 1 ~ 7"),
+    addShortcutRow(grid, 3, textUtf8("Alt + 1 ~ 7\nAlt + 小键盘 1 ~ 7"),
                    textUtf8("切换屏幕：目标屏的显示内容与主屏对调，其余屏幕复位"));
-    addShortcutRow(grid, 3, QStringLiteral("Alt + Q\nAlt + F4"),
+    addShortcutRow(grid, 4, QStringLiteral("Alt + Q\nAlt + F4"),
                    textUtf8("关闭所有窗体并退出程序"));
-    addShortcutRow(grid, 4, QStringLiteral("Alt + F5"),
+    addShortcutRow(grid, 5, QStringLiteral("Alt + F5"),
                    textUtf8("重新加载鼠标所在屏幕当前标签页的应用，其它标签页不受影响"));
 
     cardLayout->addLayout(grid);
