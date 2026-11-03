@@ -300,6 +300,13 @@ class ExternalAppWindow : public QMainWindow
      *       用于在宿主控件尺寸变化时同步外部窗口大小。
      */
     QHash<QWidget *, WId> nativeHostWindows;
+    /**
+     * @brief 需要让客户区铺满宿主控件的窗口集合（开启“去掉边框”时注册）
+     *
+     * 这类窗口仍保留 WS_THICKFRAME，窗口外框比客户区大一圈可缩放边框；
+     * 尺寸校正时需按窗口外框补偿这圈边框，才能让客户区正好等于宿主控件大小。
+     */
+    QSet<QWidget *> nativeFillClientHosts;
     /** @brief 外部窗口尺寸校正定时器，用于抵消鼠标拖动边框造成的尺寸变化 */
     QTimer *nativeHostFitTimer = nullptr;
     /** @brief 已通过 prestartApps() 拉起过的外部程序路径，避免重复启动 */
