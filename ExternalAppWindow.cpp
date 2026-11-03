@@ -5,14 +5,6 @@
 
 #include "ui_ExternalAppWindow.h"
 
-#ifndef USE_QCEFVIEW
-#    include <QGraphicsScene>
-#    include <QGraphicsView>
-#    include <QWebEnginePage>
-#    include <QWebEngineProfile>
-#    include <QWebEngineSettings>
-#    include <QWebEngineView>
-#endif
 
 ExternalAppWindow::ExternalAppWindow(ScreenConfig config, QWidget *parent) :
     QMainWindow(parent), ui(new Ui::ExternalAppWindow)
@@ -512,95 +504,14 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload)
 
 void ExternalAppWindow::loadWebPage(AppConfig &app)
 {
-#ifdef USE_QCEFVIEW
-    loadWebPageByCef(app);
-#else
-    loadWebPageByWebEngine(app);
-#endif
-}
-
-#ifdef USE_QCEFVIEW
-void ExternalAppWindow::loadWebPageByCef(AppConfig &app)
-{
     QString url = app.appPath;
     qDebug() << "load web page by QCefView, url = " << url;
     // CEF 只支持全进程唯一的缓存目录（已在 main() 中通过 QCefConfig::setCachePath 统一设置），
-    // 因此这里不再像 QWebEngineView 那样按应用维度创建独立 profile 做缓存/Cookie 隔离。
+    // 因此这里不再按应用维度创建独立 profile 做缓存/Cookie 隔离。
     // 直接把真实地址交给 CefWebView 构造，避免“about:blank → 真实地址”的二次导航
     CefWebView *cefWebView = new CefWebView(QUrl(url));
     addWindowToTabWidget(cefWebView, app);
 }
-
-#else
-
-void ExternalAppWindow::loadWebPageByWebEngine(AppConfig &app)
-{
-    QString url = app.appPath;
-    qDebug() << "url = " << url;
-    QWebEngineView *view = new QWebEngineView();
-    //使用内存缓存
-    QString cachePath = QApplication::applicationDirPath().replace("/", QDir::separator()) + QDir::separator() +
-                        "cache" + QDir::separator() + app.windowTitle;
-    qDebug() << "cachePath = " << cachePath;
-    QDir().mkpath(cachePath);
-    QWebEngineProfile *profile = new QWebEngineProfile(QString("%1-%2").arg(this->config.screenIndex).arg(app.tabName));
-    profile->setCachePath(cachePath);
-    profile->setPersistentStoragePath(cachePath);
-    profile->setHttpCacheType(QWebEngineProfile::MemoryHttpCache);
-    //禁用持久化Cookie
-    profile->setPersistentCookiesPolicy(QWebEngineProfile::NoPersistentCookies);
-    //禁用自动加载图片
-    view->settings()->setAttribute(QWebEngineSettings::AutoLoadImages, true);
-    //确保JS可用，懒加载依赖JS
-    view->settings()->setAttribute(QWebEngineSettings::JavascriptEnabled, true);
-    //禁用滚动条
-    view->settings()->setAttribute(QWebEngineSettings::ScrollAnimatorEnabled, false);
-    view->settings()->setAttribute(QWebEngineSettings::ShowScrollBars, false);
-    view->settings()->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, true);
-    QWebEnginePage *page = new QWebEnginePage(profile, view);
-    view->setPage(page);
-    view->load(QUrl(url));
-    // 启用2D加速
-    // view->settings()->setAttribute(QWebEngineSettings::Accelerated2dCanvasEnabled, false);
-    // 启用WebGL
-    // view->settings()->setAttribute(QWebEngineSettings::WebGLEnabled, true);
-    // 禁用插件
-    // view->settings()->setAttribute(QWebEngineSettings::PluginsEnabled, false);
-    view->setStyleSheet("border:none;margin:0px;padding:0px;background:red;");
-    QRect rect = currentScreen->geometry();
-    view->resize(rect.width(), rect.height());
-    //    view->showMaximized();
-    connect(view, &QWebEngineView::loadFinished,
-            [=](bool ok) { qDebug() << "QWebEngineView::loadFinished: " << ok << ", url = " << url; });
-    connect(view->page(), &QWebEnginePage::loadFinished,
-            [=](bool ok) { qDebug() << "QWebEnginePage::loadFinished: " << ok << ", url = " << url; });
-
-    // 场景不指定父对象，登记到 webSceneList 中由析构函数统一释放。
-    // QGraphicsScene 会接管通过 addWidget 加入的 QWebEngineView 的所有权（级联释放 view/page），
-    // 因此不能在此处再注册 aboutToQuit 回收 view/page，否则会重复释放。
-    QGraphicsScene *scene = new QGraphicsScene();
-    scene->setSceneRect(0, 0, rect.width(), rect.height());
-    scene->addWidget(view);
-    QGraphicsView *gpView = new QGraphicsView(scene);
-    gpView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    gpView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    gpView->setStyleSheet("border:none;margin:0px;padding:0px;background:red;");
-    // 设置容器窗口的尺寸到最大
-    gpView->resize(rect.width(), rect.height());
-    gpView->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    gpView->setToolTip(app.appPath);
-    gpView->setStyleSheet("border:none;background-color:blue;background:blue;");
-    gpView->setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
-    //    gpView->showMaximized();
-    addWindowToTabWidget(gpView, app);
-    gpView->viewport()->update();
-    scene->update();
-    // 登记场景与 profile，交由析构函数按“先场景（级联释放 view/page）、后 profile”的顺序释放
-    webSceneList.append(scene);
-    webProfileList.append(profile);
-}
-
-#endif  // USE_QCEFVIEW
 
 void ExternalAppWindow::startAndPlayPpt(AppConfig &app)
 {
@@ -917,20 +828,6 @@ ProcessInfo ExternalAppWindow::findProcessInfo(AppConfig &app)
 ExternalAppWindow::~ExternalAppWindow()
 {
     qDebug() << "MainWindow destructor";
-#ifndef USE_QCEFVIEW
-    // 先释放网页相关的场景与 profile：QGraphicsScene 会级联释放其内部的 QWebEngineView（进而释放 page），
-    // 因此必须先删除场景，再删除 QWebEngineProfile，避免 profile 被提前销毁导致仍在使用的 page/view 崩溃。
-    for (int i = webSceneList.size() - 1; i >= 0; i--)
-    {
-        delete webSceneList[i];
-    }
-    webSceneList.clear();
-    for (int i = webProfileList.size() - 1; i >= 0; i--)
-    {
-        delete webProfileList[i];
-    }
-    webProfileList.clear();
-#endif
     delete ui;
     for (int i = externalAppList.size() - 1; i >= 0; i--)
     {

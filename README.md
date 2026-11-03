@@ -9,7 +9,7 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 | 类型 | 判定条件（config.ini 中的 `app_N_path`） | 实现方式 |
 | --- | --- | --- |
 | 桌面应用程序 | 普通本地可执行文件路径（如 `xxx.exe`） | 以管理员身份启动进程，抓取目标窗口句柄（HWND），通过 `QWidget::createWindowContainer` 把外部窗口重设父窗口后嵌入本程序 |
-| 网页 | 以 `http://` 或 `https://` 开头 | 使用 `QWebEngineView` 加载，独立 `QWebEngineProfile` 与内存缓存 |
+| 网页 | 以 `http://` 或 `https://` 开头 | 使用 `QCefView`（CEF 109 内核）加载，全进程共用 `cefCache` 缓存目录 |
 | PPT 演示文稿 | 路径中包含 `.ppt` | 通过 ActiveQt（`QAxWidget`）调用 WPS(`KWPP.Application`) 或 PowerPoint(`PowerPoint.Application`) COM 接口，循环全屏放映后嵌入放映窗口 |
 
 每个屏幕窗口内部以 `QTabWidget` 承载多个应用，程序启动时自动完成启动、定位、嵌入、全屏等全部操作。
@@ -24,7 +24,7 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 - **管理员权限自提升**：`runas_administrator=true` 时，若当前非管理员，则通过 `ShellExecuteEx(runas)` 重新以管理员身份启动自身并退出原进程（被嵌入的应用需要通过 `startDetached("runas")` 启动）。
 - **PPT 自动放映**：启动前自动结束 WPS 相关进程（`wps.exe`、`wpp.exe`、`wpscloudsvr.exe`、`wpsupdate.exe`）避免冲突，放映过程带 100ms 轮询守护，放映结束会自动重新开始，实现无限循环。
 - **Chrome 弹窗清理**：每 500ms 扫描一次 `chrome.exe` 窗口，自动关闭"翻译此页""无法更新 Chrome""要恢复页面吗"等干扰窗口及 `Chrome_SystemMessageWindow` 类窗口。
-- **网页调试**：内置启动 `QTWEBENGINE_REMOTE_DEBUGGING=9222`，可通过 `http://127.0.0.1:9222` 远程调试嵌入网页。
+- **网页调试**：可在 `main.cpp` 中通过 `cefConfig.setRemoteDebuggingPort(9222)` 打开 CEF 远程调试（默认关闭），通过 `http://127.0.0.1:9222` 调试嵌入网页。
 - **调试模式**：`debug_mode=true` 时不启动任何应用，仅生成占位标签页显示屏幕序号与屏幕几何信息，并在窗口中保留标签栏，便于排查屏幕映射关系。
 
 ## 3. 运行环境与技术栈
@@ -33,13 +33,13 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 | --- | --- |
 | 语言标准 | C++11（`CONFIG += c++11`） |
 | 框架 | Qt 5.14.2 |
-| Qt 模块 | `core` `gui` `widgets` `network` `axcontainer`；MSVC 下额外启用 `webenginewidgets` `webchannel` |
-| 工具链 | Windows 下 MSVC 或 MinGW（推荐 MSVC，WebEngine/ActiveQt 依赖更完整） |
+| Qt 模块 | `core` `gui` `widgets` `network` `axcontainer` |
+| 工具链 | Windows 下必须使用 MSVC（CEF 官方二进制由 MSVC 构建，MinGW 无法链接） |
 | 目标平台 | Windows 7 及以上；银河麒麟 V10（Linux 侧仅预留接口，尚未完整实现） |
 | Win32 依赖 | `user32`、`kernel32`、`psapi`、`tlhelp32` |
 | 第三方库 | `tz.utils.base`（提供 `IniConfiguration` 的 ini 读写实现，需与可执行文件同目录） |
 
-> 说明：`webenginewidgets` 仅在 `win32:msvc` 条件下加入。若使用 MinGW 构建且需要网页展示能力，需自行确认工具链中已提供 Qt WebEngine 模块。
+> 说明：网页能力依赖 `3rdparty/QCefView` 与 `3rdparty/cef`，构建前必须就位，否则工程直接构建失败；可用 `tools/build-qcefview-deps.bat` 一键生成。
 
 ## 4. 目录结构
 
@@ -101,9 +101,9 @@ MultiDisplayControl/
 - `initWindow()`：按 `sort_screen` 对 `QGuiApplication::screens()` 排序（主屏排到最后），确定本窗口的**默认屏幕** `defaultScreen` 及是否为主屏 `isPrimaryScreen`。
 - `setScreen(QScreen*, force)`：把窗口移动到目标屏幕并 `showFullScreen()`，同时同步外部窗口几何尺寸、悬浮标签栏位置和屏幕序号浮层位置。
 - `setToDefaultScreen()` / `getDefaultScreen()` / `getCurrentScreen()`：默认屏幕复位与查询，供热键切换逻辑使用。
-- `loadApps(bool isReload)`：遍历配置的应用列表，按路径类型分别调用 `loadWebPage()`、`startAndPlayPpt()`、`startExternalProgram()`；结束后初始化标签栏，若无可展示内容则隐藏窗口。
-- `startExternalProgram()` / `findProcessInfo()` / `startProcess()`：启动外部程序（管理员权限）→ 轮询 `getProcessInfo(进程名, 窗口标题)` 直至稳定命中窗口（最多 30s，命中后连续确认 5 次）→ 改写窗口样式并以容器窗口嵌入标签页。
-- `loadWebPage()`：为每个网页创建独立 `QWebEngineProfile`，缓存目录为 `<exe目录>/cache/<窗口标题>`，使用内存 HTTP 缓存、禁用持久化 Cookie，并放入 `QGraphicsView` 场景以撑满屏幕。
+- `loadApps(bool isReload)`：先并行预启动本屏所有外部程序，再按配置顺序分派到 `loadWebPage()`、`startAndPlayPpt()`、`startExternalProgram()`；结束后初始化标签栏，若无可展示内容则隐藏窗口。
+- `startExternalProgram()` / `findProcessInfo()` / `startProcess()`：启动外部程序（管理员权限）→ 轮询 `getProcessInfo(进程名, 窗口标题)` 直至稳定命中窗口（最多 30s，命中后连续确认 3 次）→ 以宿主控件嵌入标签页。
+- `loadWebPage()`：通过 `CefWebView`（QCefView/CEF 109）加载网页，全进程共用 `<exe目录>/cefCache` 缓存目录。
 - `startAndPlayPpt()` / `playPpt()`：通过 COM 自动选择 WPS 或 PowerPoint，配置循环放映参数（`LoopUntilStopped`、`AdvanceMode=1` 等）后 `Run()`，并轮询守护放映窗口，嵌入到标签页。
 - `tabIndexChanged()`：标签切换时展示对应外部窗口、隐藏其余窗口；Chrome 窗口额外通过 `ShowWindow()` 同步显隐。
 - 析构时统一结束所启动的进程并释放资源。

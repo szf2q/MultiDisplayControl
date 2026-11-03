@@ -8,15 +8,9 @@
 #include <QSharedPointer>
 #include <QTimer>
 #include <QVector>
-#ifndef USE_QCEFVIEW
-#    include <QWebEngineProfile>
-#    include <QWebEngineView>
-#endif
+#include <QCefConfig.h>
+#include <QCefContext.h>
 #include <QtConcurrent/QtConcurrent>
-#ifdef USE_QCEFVIEW
-#    include <QCefConfig.h>
-#    include <QCefContext.h>
-#endif
 #include "ExternalAppWindow.h"
 #include "GlobalKeyWatcher.h"
 #include "GlobalVariants.h"
@@ -269,20 +263,6 @@ int main(int argc, char *argv[])
 {
     try
     {
-#ifndef USE_QCEFVIEW
-        qputenv("QTWEBENGINE_CHROMIUM_FLAGS",
-                // "--disable-gpu "
-                // "--disable-software-rasterizer "
-                // "--no-sandbox "
-                "--disable-features=Win32kLockdown "       //解决Win10下QtWebEngineProcess.exe崩溃的问题
-                "--enable-logging --v=0");                 // Chrome日志，v=0不输出日志，v=1输出详细日志
-        // 远程调试端口 9222 默认关闭：开启后本机任意进程均可通过 http://127.0.0.1:9222 接管页面，存在安全风险。
-        // 仅在需要调试网页时，取消下面宏定义的注释后重新编译。
-        // #define ENABLE_WEBENGINE_REMOTE_DEBUGGING
-#ifdef ENABLE_WEBENGINE_REMOTE_DEBUGGING
-        qputenv("QTWEBENGINE_REMOTE_DEBUGGING", "9222");  //启用远程调试，通过http://127.0.0.1:9222访问
-#endif
-#endif  // USE_QCEFVIEW
         QApplication a(argc, argv);
         QNetworkProxyFactory::setUseSystemConfiguration(false);
 
@@ -301,7 +281,6 @@ int main(int argc, char *argv[])
             }
         }
 
-#ifdef USE_QCEFVIEW
         // ==================== CEF(QCefView) 初始化 ====================
         // 约束说明：
         //   1. 全进程只能有一个 QCefContext，且必须在创建任何 QCefView 之前初始化、
@@ -324,7 +303,6 @@ int main(int argc, char *argv[])
         // cefConfig.setRemoteDebuggingPort(9222);
         QCefContext cefContext(&a, argc, argv, &cefConfig);
         // =============================================================
-#endif
 
         qDebug() << "config.count() = " << config.count;
         bool hasPpt = false;

@@ -1,54 +1,44 @@
 QT       += core gui network axcontainer
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-# 网页渲染后端（编译期开关）：
-#   默认使用 QCefView（CEF 内核，当前锁定 CEF 109.1.18 / Chromium 109），
-#   可独立升级 Chromium 内核，以规避较新前端技术栈在旧内核上的兼容性问题；
-#   如需回退到 QWebEngineView（QtWebEngine，内核随 Qt 版本固定为 Chromium 77），
-#   注释掉下面这一行 DEFINES 即可。
+# 网页渲染后端：QCefView（CEF 内核，当前锁定 CEF 109.1.18 / Chromium 109），
+# 可独立升级 Chromium 内核，以规避较新前端技术栈在旧内核上的兼容性问题。
 # 重要限制：
 #   1. CEF 官方 Windows 二进制由 MSVC 构建，MinGW 无法链接，Windows 下必须使用 MSVC 工具链；
 #   2. 为兼容 Windows 7，CEF 需选用 Chromium <= 109 的发行版（Chromium 110 起已放弃 Win7）；
-#   3. 开启本开关后必须预先准备好第三方依赖（3rdparty/QCefView 与 3rdparty/cef），
+#   3. 构建前必须预先准备好第三方依赖（3rdparty/QCefView 与 3rdparty/cef），
 #      否则构建直接失败；依赖可用 tools/build-qcefview-deps.bat 一键生成。
-DEFINES += USE_QCEFVIEW
 
-contains(DEFINES, USE_QCEFVIEW) {
-    # ---- QCefView 与 CEF 的头文件/库路径，请按实际部署位置调整 ----
-    QCEFVIEW_ROOT = $$PWD/3rdparty/QCefView
-    CEF_ROOT      = $$PWD/3rdparty/cef
+# ---- QCefView 与 CEF 的头文件/库路径，请按实际部署位置调整 ----
+QCEFVIEW_ROOT = $$PWD/3rdparty/QCefView
+CEF_ROOT      = $$PWD/3rdparty/cef
 
-    INCLUDEPATH += $$QCEFVIEW_ROOT/include
-    INCLUDEPATH += $$CEF_ROOT
+INCLUDEPATH += $$QCEFVIEW_ROOT/include
+INCLUDEPATH += $$CEF_ROOT
 
-    win32 {
-        LIBS += -L$$QCEFVIEW_ROOT/lib -lQCefView
-        LIBS += -L$$CEF_ROOT/Release -llibcef
-        # 运行期部署说明（由 QCefView 的加载方式决定，不能随意摆放）：
-        #   1. QCefView.dll 必须放在 exe 同级目录；
-        #   2. CEF 运行库必须放在 exe 同级的 CefView/ 子目录下，包括
-        #      CefViewWing.exe（渲染子进程宿主）、libcef.dll、chrome_elf.dll、
-        #      libEGL.dll、libGLESv2.dll、d3dcompiler_47.dll、vk_swiftshader.dll、
-        #      vulkan-1.dll、snapshot_blob.bin、v8_context_snapshot.bin、
-        #      icudtl.dat、*.pak、locales/ 等。
-        #      原因：QCefView 内部会 SetDllDirectory("<exe目录>/CefView")，
-        #      并把 browser_subprocess_path 指向 "<exe目录>/CefView/CefViewWing.exe"。
-        #   以上文件可在 3rdparty/QCefView/bin 下找到；
-        #   可执行 tools/deploy-qcefview-runtime.bat <exe目录> --with-qt
-        #   一次完成上述拷贝与 Qt 依赖部署。
-    } else:unix {
-        LIBS += -L$$QCEFVIEW_ROOT/lib -lQCefView
-        LIBS += -L$$CEF_ROOT/Release -lcef
-        # 运行期须将 libcef.so、libQCefView.so、icudtl.dat、locales/、*.pak 放入可搜索路径
-    }
-
-    SOURCES += CefWebView.cpp
-    HEADERS += CefWebView.h
-} else {
-    win32:msvc {
-        QT   += webenginewidgets webchannel
-    }
+win32 {
+    LIBS += -L$$QCEFVIEW_ROOT/lib -lQCefView
+    LIBS += -L$$CEF_ROOT/Release -llibcef
+    # 运行期部署说明（由 QCefView 的加载方式决定，不能随意摆放）：
+    #   1. QCefView.dll 必须放在 exe 同级目录；
+    #   2. CEF 运行库必须放在 exe 同级的 CefView/ 子目录下，包括
+    #      CefViewWing.exe（渲染子进程宿主）、libcef.dll、chrome_elf.dll、
+    #      libEGL.dll、libGLESv2.dll、d3dcompiler_47.dll、vk_swiftshader.dll、
+    #      vulkan-1.dll、snapshot_blob.bin、v8_context_snapshot.bin、
+    #      icudtl.dat、*.pak、locales/ 等。
+    #      原因：QCefView 内部会 SetDllDirectory("<exe目录>/CefView")，
+    #      并把 browser_subprocess_path 指向 "<exe目录>/CefView/CefViewWing.exe"。
+    #   以上文件可在 3rdparty/QCefView/bin 下找到；
+    #   可执行 tools/deploy-qcefview-runtime.bat <exe目录> --with-qt
+    #   一次完成上述拷贝与 Qt 依赖部署。
+} else:unix {
+    LIBS += -L$$QCEFVIEW_ROOT/lib -lQCefView
+    LIBS += -L$$CEF_ROOT/Release -lcef
+    # 运行期须将 libcef.so、libQCefView.so、icudtl.dat、locales/、*.pak 放入可搜索路径
 }
+
+SOURCES += CefWebView.cpp
+HEADERS += CefWebView.h
 
 CONFIG += c++11
 
@@ -170,9 +160,6 @@ unix{
     #指定动态链接库的优先查找路径（仅linux有效）
     QMAKE_RPATHDIR += $$DESTDIR
 }
-
-#INCLUDEPATH += F:\Qt\Qt5.14.2\5.14.2\msvc2017_64\include
-#INCLUDEPATH += F:\Qt\Qt5.14.2\5.14.2\msvc2017_64\include\QtWebEngineWidgets
 
 RESOURCES += \
     resource.qrc

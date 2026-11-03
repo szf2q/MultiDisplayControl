@@ -10,7 +10,7 @@ rem   - ??? Qt 5.14.2 msvc2017_64?CMake >= 3.21?Ninja?git
 rem   - ??? github.com??? QCefView / CefViewCore??
 rem     cef-builds.spotifycdn.com??? CEF ????? 105MB?
 rem
-rem ???? MultiDisplayControl.pro ? USE_QCEFVIEW ?????????
+rem Required by MultiDisplayControl.pro (QCefView/CEF backend is always enabled)
 rem   3rdparty\cef              CEF 109 SDK?? Release\libcef.lib
 rem   3rdparty\QCefView\lib     QCefView.lib?????
 rem   3rdparty\QCefView\bin     QCefView.dll ? CefView\ ????
@@ -89,5 +89,5 @@ robocopy "%BUILD_DIR%\output\Release\lib" "%ROOT%\3rdparty\QCefView\lib" QCefVie
 rem QCefView ????QCefView.dll ? CefView\ ?????????
 robocopy "%BUILD_DIR%\output\Release\bin" "%ROOT%\3rdparty\QCefView\bin" /E /XF *.pdb /NFL /NDL /NJH /NJS /NP
 
-echo [OK] ????????? qmake ?? DEFINES+=USE_QCEFVIEW ?? CEF ????
+echo [OK] Dependencies are ready, run qmake and build MultiDisplayControl now.
 exit /b 0

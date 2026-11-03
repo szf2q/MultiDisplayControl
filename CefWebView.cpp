@@ -1,7 +1,5 @@
 #include "CefWebView.h"
 
-#ifdef USE_QCEFVIEW
-
 #include <QDebug>
 #include <QResizeEvent>
 #include <QUrl>
@@ -64,5 +62,3 @@ void CefWebView::resizeEvent(QResizeEvent *event)
         cefView->setGeometry(rect());
     }
 }
-
-#endif  // USE_QCEFVIEW

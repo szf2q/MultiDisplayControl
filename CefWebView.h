@@ -4,8 +4,6 @@
 #include <QUrl>
 #include <QWidget>
 
-#ifdef USE_QCEFVIEW
-
 class QCefView;
 
 /**
@@ -67,7 +65,5 @@ class CefWebView : public QWidget
     /** 内部真正的 QCefView 实例，以本控件为父对象，随本控件一并销毁 */
     QCefView *cefView = nullptr;
 };
-
-#endif  // USE_QCEFVIEW
 
 #endif  // CEFWEBVIEW_H
