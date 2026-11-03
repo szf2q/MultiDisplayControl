@@ -279,6 +279,13 @@ class ExternalAppWindow : public QMainWindow
      */
     void syncFloatingTabBar();
     /**
+     * @brief 按标签实际总宽度重新布局悬浮标签栏
+     *
+     * 标签栏宽度不再固定为 500，而是按所有标签的宽度累加后自适应：
+     * 右边缘保持默认布局位置，宽度增加时向左扩展，避免最后一个标签被裁掉。
+     */
+    void layoutFloatingTabBar();
+    /**
      * @brief 结束并清理指定 PPT 放映会话
      * @param appId 软件 id
      */

@@ -44,7 +44,8 @@ ExternalAppWindow::ExternalAppWindow(ScreenConfig config, QWidget *parent) :
     tabBarWidget->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
     tabBarWidget->setAttribute(Qt::WA_TranslucentBackground);
     tabBarWidget->setAttribute(Qt::WA_AlwaysStackOnTop);
-    tabBarWidget->setMinimumSize(500, 50);
+    // 宽度不再固定：最小宽度置 0，由 layoutFloatingTabBar() 按标签总宽度重新计算
+    tabBarWidget->setMinimumSize(0, 50);
     tabBar = new QTabBar(tabBarWidget);
     tabBar->setAttribute(Qt::WA_TranslucentBackground);
     tabBar->setAttribute(Qt::WA_AlwaysStackOnTop);
@@ -52,7 +53,7 @@ ExternalAppWindow::ExternalAppWindow(ScreenConfig config, QWidget *parent) :
     tabBar->setElideMode(Qt::ElideNone);
     tabBar->setUsesScrollButtons(false);
     tabBar->setExpanding(false);
-    tabBar->setGeometry(tabBarWidget->geometry().x(), tabBarWidget->geometry().y(), 500, 35);
+    tabBar->setGeometry(0, 0, 500, 35);
     tabBarWidget->show();
     // 悬浮标签栏与内容标签页只在这里连接一次，避免 initTabWidget 多次调用导致重复响应
     QObject::connect(tabBar, &QTabBar::currentChanged, this, [this](int index) { tabIndexChanged(index); });
@@ -192,7 +193,8 @@ void ExternalAppWindow::setScreen(QScreen *screen, bool force)
     Sleep(50);
     if (this->tabBarWidget != nullptr)
     {
-        tabBarWidget->setGeometry(rect.x() + config.tabOffsetX, rect.y() + 10, 500, 50);
+        // 由自适应布局统一设置位置与宽度，避免标签较多时最后一个标签被裁掉
+        layoutFloatingTabBar();
     }
     if (config.showIndex && screenIndexWidget != nullptr)
     {
@@ -1037,8 +1039,51 @@ void ExternalAppWindow::syncFloatingTabBar()
             tabBar->setCurrentIndex(currentIndex);
         }
     }
+    // 标签数量或名称变化后，需要重新计算标签栏宽度，保证最后一个标签完整可见
+    layoutFloatingTabBar();
     // 普通模式下只有多个标签才需要悬浮标签栏，调试模式始终显示
     tabBarWidget->setVisible(config.debugMode || ui->tabWidget->count() > 1);
+}
+
+void ExternalAppWindow::layoutFloatingTabBar()
+{
+    if (tabBar == nullptr || tabBarWidget == nullptr)
+    {
+        return;
+    }
+    QScreen *screen = (currentScreen != nullptr) ? currentScreen : QGuiApplication::primaryScreen();
+    if (screen == nullptr)
+    {
+        return;
+    }
+    const QRect screenRect = screen->geometry();
+    // 默认布局参数：宽度 500、整体高度 50、标签高度 35（保持原有外观）
+    const int defaultWidth = 500;
+    const int barHeight = 50;
+    const int tabHeight = 35;
+    // 逐个累加每个标签的实际宽度：标签数量较多或名称较长时总宽度会超过 500，
+    // 旧实现把标签栏宽度写死为 500，超出部分会被直接裁掉（表现为最后一个标签显示不全）。
+    // tabSizeHint 是 protected 接口，这里先把标签栏撑到屏幕最大可用宽度让 Qt 完成布局，
+    // 再读取最后一个标签的右边界，得到标签实际需要的总宽度。
+    tabBar->setGeometry(0, 0, screenRect.width(), tabHeight);
+    int tabsWidth = 0;
+    if (tabBar->count() > 0)
+    {
+        tabsWidth = tabBar->tabRect(tabBar->count() - 1).right() + 1;
+    }
+    int width = qMax(defaultWidth, tabsWidth + 10);
+    // 右边缘保持默认布局位置不变，宽度增加时向左扩展，
+    // 避免向右扩展超出屏幕边界导致末尾标签再次被裁掉
+    const int right = screenRect.x() + config.tabOffsetX + defaultWidth;
+    int left = right - width;
+    if (left < screenRect.x())
+    {
+        // 标签总宽度超过整块屏幕可用宽度时只能占满屏幕，此时无法再完整显示所有标签
+        left = screenRect.x();
+        width = right - left;
+    }
+    tabBarWidget->setGeometry(left, screenRect.y() + 10, width, barHeight);
+    tabBar->setGeometry(0, 0, width, tabHeight);
 }
 
 void ExternalAppWindow::applyScreenConfig(const ScreenConfig &cfg, QScreen *targetScreen)
