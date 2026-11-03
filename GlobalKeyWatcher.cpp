@@ -171,6 +171,8 @@ void GlobalKeyWatcher::registerHotkey()
     registerOneHotkey(20, MOD_ALT, 'Q', "Alt+Q");
     registerOneHotkey(21, MOD_ALT, VK_F4, "Alt+F4");
     registerOneHotkey(22, MOD_ALT, VK_F5, "Alt+F5");
+    // Alt+F12：自动重启主程序（配置项如“嵌入应用去掉边框”需重启才生效时使用）
+    registerOneHotkey(23, MOD_ALT, VK_F12, "Alt+F12");
     registerOneHotkey(31, MOD_ALT, VK_NUMPAD1, "Alt+Num1");
     registerOneHotkey(32, MOD_ALT, VK_NUMPAD2, "Alt+Num2");
     registerOneHotkey(33, MOD_ALT, VK_NUMPAD3, "Alt+Num3");
@@ -233,6 +235,13 @@ bool GlobalKeyWatcher::nativeEventFilter(const QByteArray &eventType, void *mess
             // ALT+F5：重新加载鼠标所在屏幕的全部应用，用于单个屏幕的故障恢复
             qDebug() << "组合键Alt+F5触发";
             emit altAndF5Pressed();
+            return true;
+        }
+        else if (msg->wParam == 23)
+        {
+            // ALT+F12：自动重启主程序，用于让需要重启的配置项立即生效
+            qDebug() << "组合键Alt+F12触发";
+            emit restartKeyPressed();
             return true;
         }
         else if (msg->wParam >= 31 && msg->wParam <= 47)

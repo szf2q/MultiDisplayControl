@@ -6,6 +6,7 @@
 #include <QMap>
 #include <QMessageBox>
 #include <QNetworkProxyFactory>
+#include <QProcess>
 #include <QSharedMemory>
 #include <QSharedPointer>
 #include <QTimer>
@@ -282,6 +283,36 @@ void closeAppsWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow
 }
 
 /**
+ * @brief 注册 Alt+F12 快捷键的响应：以 --restart 参数重新拉起自身后退出当前实例
+ *
+ * 先拉起新实例再销毁窗口：新实例带 --restart 参数启动，会在单实例校验处等待旧实例
+ * 释放共享内存后再继续；把启动放在销毁之前，可避免关闭流程耗时或异常时新实例没有起来。
+ *
+ * @param watcher 全局热键监听器
+ * @param winList 各屏幕窗口列表
+ */
+void restartAppWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
+{
+    QObject::connect(&watcher, &GlobalKeyWatcher::restartKeyPressed, [&winList]() {
+        qDebug() << "捕获到组合键 Alt+F12，自动重启 MultiDisplayControl";
+        const QString appPath = QApplication::applicationFilePath();
+        const QString workDir = QApplication::applicationDirPath();
+        if (!QProcess::startDetached(appPath, QStringList() << QStringLiteral("--restart"), workDir))
+        {
+            // 新实例没有起来时保持当前实例运行，避免用户直接失去程序
+            qWarning() << "restart MultiDisplayControl failed";
+            return;
+        }
+        // 旧实例正常退出：销毁各屏窗口会按既有流程结束其启动的外部程序，
+        // 新实例随后重新启动并嵌入这些应用
+        qDeleteAll(winList);
+        winList.clear();
+        QApplication::quit();
+        QApplication::exit(0);
+    });
+}
+
+/**
  * @brief 注册 Alt+H 快捷键的响应：首次按下弹出快捷键说明浮层，再次按下隐藏
  * @param watcher 全局热键监听器
  * @param helpDialog 快捷键说明浮层，生命周期由 main() 的栈对象管理
@@ -358,7 +389,18 @@ int main(int argc, char *argv[])
         // 且两个实例会互相结束对方启动的进程。必须放在提权重启之后：
         // 提权时父进程会立即退出，若提前占用共享内存，被拉起的提权子进程会误判为“已运行”。
         QSharedMemory singleInstanceGuard("MultiDisplayControl.SingleInstance");
-        if (!singleInstanceGuard.create(1))
+        bool guardCreated = singleInstanceGuard.create(1);
+        if (!guardCreated && a.arguments().contains(QStringLiteral("--restart")))
+        {
+            // 自动重启时新旧实例会短暂并存：旧实例需要先结束外部程序再退出，
+            // 这里轮询等待共享内存释放（最多 15 秒），避免新实例误判“程序已在运行”
+            for (int i = 0; i < 75 && !guardCreated; i++)
+            {
+                Sleep(200);
+                guardCreated = singleInstanceGuard.create(1);
+            }
+        }
+        if (!guardCreated)
         {
             qDebug() << "another instance is running, error = " << singleInstanceGuard.errorString();
             QMessageBox::warning(nullptr, QStringLiteral("多屏控制"),
@@ -429,6 +471,7 @@ int main(int argc, char *argv[])
         reloadCurrentScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         switchTabWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         closeAppsWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
+        restartAppWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         shortcutHelpWatcher(GlobalKeyWatcher::watcher, shortcutHelpDialog);
 
         // 管理界面：Alt+M 显示/隐藏；保存后调用运行时做增量热更新，并把结果回传到状态栏

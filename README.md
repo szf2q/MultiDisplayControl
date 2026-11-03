@@ -20,7 +20,7 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 - **可视化管理界面**：`Alt+M` 全屏显示/隐藏管理窗口，支持软件清单管理（桌面程序/网页/PPT，清单内直接显示软件预览缩略图）、屏幕数量与布局管理、拖拽分配软件到屏幕、同屏多软件调整标签顺序；保存后立即热应用，无需重启。同一软件只能绑定到一块屏幕：已绑定的条目在清单中显示「已绑定 N号屏」标记且无法再拖出，从屏幕移除后标记消失、恢复可拖拽。新增或编辑软件时可自动运行一次目标程序，抓取第一个界面作为预览图（保存在 `previews/` 目录）并自动填充窗口标题；网页通过临时 CEF 窗口抓取首帧生成预览，PPT 通过 COM 导出第一页。
 - **配置单文件**：`config.json` 是唯一的数据源，保存时自动备份为 `config.json.bak`；不再写出 `config.ini`，仅在 `config.json` 不存在（旧部署升级）时从旧版 `config.ini` 导入一次并另存为 `config.json`。
 - **屏幕序号标识**：可在每块屏幕右上角浮层显示屏幕编号（`show_index`），标签页标题同时带上屏幕序号，主屏以 `*` 前缀标识。
-- **全局热键切换**：`Alt+数字` 可在屏幕之间"对调"显示内容，`Alt+R` 一键复位到默认屏幕，`Alt+F5` 只重新加载鼠标所在屏幕当前标签页的应用（不切换标签），`Alt+Tab` / `Alt+Shift+Tab` 循环切换鼠标所在屏幕的标签页，`Alt+Q` / `Alt+F4` 退出。
+- **全局热键切换**：`Alt+数字` 可在屏幕之间"对调"显示内容，`Alt+R` 一键复位到默认屏幕，`Alt+F5` 只重新加载鼠标所在屏幕当前标签页的应用（不切换标签），`Alt+Tab` / `Alt+Shift+Tab` 循环切换鼠标所在屏幕的标签页，`Alt+F12` 自动重启主程序，`Alt+Q` / `Alt+F4` 退出。
 - **悬浮标签栏**：屏幕顶部提供独立置顶的 `QTabBar`（可通过 `tab_offset_x` 微调水平位置），点击即可切换当前屏幕显示的应用。
 - **外部窗口嵌入**：普通桌面程序通过 Win32 窗口样式改写（`WS_CHILD`，保留自身标题栏/边框）+ `SetParent` 嵌入；Chrome 窗口仍使用 `QWindow::fromWinId` 包装。
 - **管理员权限自提升**：`runas_administrator=true` 时，若当前非管理员，则通过 `ShellExecuteEx(runas)` 重新以管理员身份启动自身并退出原进程。被嵌入的外部应用始终以当前用户权限启动，不会单独弹 UAC。
@@ -137,6 +137,7 @@ MultiDisplayControl/
 - `switchScreenKeyPressed(int screenIndex, QString keyMessage)` — `Alt + 1~7` / `Alt + 小键盘 1~7`
 - `altAndRPressed()` — `Alt + R`
 - `altAndF5Pressed()` — `Alt + F5`，重新加载鼠标所在屏幕当前标签页的应用（不切换标签）
+- `restartKeyPressed()` — `Alt + F12`，自动重启主程序（先结束后各屏应用，再以 `--restart` 参数拉起新实例并等待单实例锁释放）
 - `altTabPressed(bool reverse)` — `Alt + Tab` / `Alt + Shift + Tab`，循环切换鼠标所在屏幕的标签页
 - `quitKeyPressed(QString keyMessage)` — `Alt + Q` / `Alt + F4`
 - `helpKeyPressed()` — `Alt + H`，弹出/关闭快捷键说明浮层（置顶、无边框，点击浮层外部或按 Esc 关闭）
@@ -222,6 +223,7 @@ app_1_startup_args=
 | `Alt+R` | 重新把所有窗口复位到各自的默认屏幕（不改变当前窗口内容） |
 | `Alt+F5` | 重新加载鼠标所在屏幕当前标签页的应用（外部程序重启、网页重新加载），其它标签页不受影响 |
 | `Alt+M` | 打开/隐藏多屏控制管理界面（软件清单、屏幕布局、拖拽分配、保存热应用） |
+| `Alt+F12` | 自动重启 MultiDisplayControl（结束各屏应用后重新启动自身，用于让需重启的配置立即生效） |
 | `Alt+H` | 显示/关闭快捷键说明浮层 |
 | `Alt+Q` / `Alt+F4` | 关闭所有窗口并退出程序 |
 

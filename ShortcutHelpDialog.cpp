@@ -169,6 +169,8 @@ void ShortcutHelpDialog::buildUi()
                    textUtf8("重新加载鼠标所在屏幕当前标签页的应用，其它标签页不受影响"));
     addShortcutRow(grid, 6, textUtf8("Alt + Tab\nAlt + Shift + Tab"),
                    textUtf8("切换鼠标所在屏幕的标签页：向后 / 向前循环切换"));
+    addShortcutRow(grid, 7, QStringLiteral("Alt + F12"),
+                   textUtf8("自动重启 MultiDisplayControl（结束各屏应用后重新启动自身）"));
 
     cardLayout->addLayout(grid);
     cardLayout->addStretch();
