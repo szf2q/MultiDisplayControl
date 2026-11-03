@@ -103,16 +103,19 @@ namespace
             const QString typeText = index.data(kSoftwareTypeRole).toString();
             const QString boundText = index.data(kSoftwareBoundRole).toString();
 
-            // 清空文本后交给基类：只保留背景、选中/悬停效果与缩略图
+            // 直接调用样式绘制背景、选中/悬停效果与缩略图。
+            // 不能调用 QStyledItemDelegate::paint()：它内部会重新 initStyleOption，
+            // 把我们清空的文本又填回去，导致与自绘文字叠加出现重影。
             opt.text.clear();
-            QStyledItemDelegate::paint(painter, opt, index);
+            const QWidget *widget = option.widget;
+            QStyle *style = (widget != nullptr) ? widget->style() : QApplication::style();
+            style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);
 
             // 文本区域由样式计算，自动避开样式表里的 padding、margin 与左侧图标
             QRect textRect = option.rect;
-            const QWidget *widget = option.widget;
             if (widget != nullptr)
             {
-                textRect = widget->style()->subElementRect(QStyle::SE_ItemViewItemText, &opt, widget);
+                textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &opt, widget);
             }
             if (textRect.isEmpty() || name.isEmpty())
             {
