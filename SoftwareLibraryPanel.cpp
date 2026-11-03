@@ -71,6 +71,30 @@ namespace
     const int kSoftwareBoundRole = Qt::UserRole + 3;
 
     /**
+     * @brief 把预览图裁剪缩放为固定尺寸
+     *
+     * 先等比放大到完全覆盖目标尺寸，再居中裁剪多余部分：
+     * 既保证输出宽高完全一致（软件名称左边界对齐），又不会拉伸变形。
+     *
+     * @param source     原始预览图
+     * @param targetSize 目标尺寸
+     * @return 固定尺寸的预览图；输入无效时原样返回
+     */
+    QPixmap makeFixedPreview(const QPixmap &source, const QSize &targetSize)
+    {
+        if (source.isNull() || targetSize.isEmpty())
+        {
+            return source;
+        }
+        const QPixmap covered = source.scaled(targetSize, Qt::KeepAspectRatioByExpanding,
+                                              Qt::SmoothTransformation);
+        const QRect cropRect((covered.width() - targetSize.width()) / 2,
+                             (covered.height() - targetSize.height()) / 2, targetSize.width(),
+                             targetSize.height());
+        return covered.copy(cropRect);
+    }
+
+    /**
      * @brief 软件清单条目绘制代理
      *
      * 列表条目需要“名称 + 类型 + 已绑定屏幕标记”三段样式不同的文本：
@@ -810,32 +834,51 @@ void SoftwareLibraryPanel::onItemDoubleClicked(QListWidgetItem *item)
 
 QIcon SoftwareLibraryPanel::iconForSoftware(const SoftwareItem &software) const
 {
+    // 预览图统一输出为 128x72：宽度、高度都固定，避免不同宽高比的图片
+    // 让列表项左侧图标的实际宽度不同，进而导致软件名称左边界参差不齐
+    const QSize iconSize(128, 72);
     const QString previewFile = SoftwareCapture::resolveExistingPreview(QApplication::applicationDirPath(), software);
     if (!previewFile.isEmpty())
     {
         QPixmap preview(previewFile);
         if (!preview.isNull())
         {
-            // 预览图按列表图标区域等比缩放，避免拉伸变形
-            preview = preview.scaled(QSize(128, 72), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            return QIcon(preview);
+            return QIcon(makeFixedPreview(preview, iconSize));
         }
     }
+
+    // 无预览图时回退类型图标：绘制到同样尺寸的透明画布上居中显示，
+    // 保证所有条目图标区域宽度一致、名称左对齐
+    QIcon typeIcon;
     if (software.type == "web")
     {
-        return style()->standardIcon(QStyle::SP_DriveNetIcon);
+        typeIcon = style()->standardIcon(QStyle::SP_DriveNetIcon);
     }
-    if (software.type == "ppt")
+    else if (software.type == "ppt")
     {
-        return style()->standardIcon(QStyle::SP_FileIcon);
+        typeIcon = style()->standardIcon(QStyle::SP_FileIcon);
     }
-    QFileInfo fileInfo(software.path);
-    if (fileInfo.exists())
+    else
     {
-        QFileIconProvider provider;
-        return provider.icon(fileInfo);
+        QFileInfo fileInfo(software.path);
+        if (fileInfo.exists())
+        {
+            QFileIconProvider provider;
+            typeIcon = provider.icon(fileInfo);
+        }
+        else
+        {
+            typeIcon = style()->standardIcon(QStyle::SP_ComputerIcon);
+        }
     }
-    return style()->standardIcon(QStyle::SP_ComputerIcon);
+    QPixmap canvas(iconSize);
+    canvas.fill(Qt::transparent);
+    const QPixmap typePixmap = typeIcon.pixmap(48, 48);
+    QPainter painter(&canvas);
+    painter.drawPixmap((iconSize.width() - typePixmap.width()) / 2,
+                       (iconSize.height() - typePixmap.height()) / 2, typePixmap);
+    painter.end();
+    return QIcon(canvas);
 }
 
 void SoftwareLibraryPanel::generatePreview(SoftwareItem *software)
