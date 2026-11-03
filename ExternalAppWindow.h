@@ -226,6 +226,29 @@ class ExternalAppWindow : public QMainWindow
      */
     ProcessInfo findProcessInfo(AppConfig &app);
     /**
+     * @brief 并行等待多个外部程序的窗口就绪
+     *
+     * 同一轮轮询中同时探测所有待嵌入应用，每个应用独立累计连续命中次数，
+     * 总等待时长约等于“最慢的那个应用”，而不是各应用等待时间之和。
+     *
+     * @param appIndexes 待等待应用在 config.appList 中的下标集合
+     * @return 下标到已稳定窗口进程信息的映射；超时未命中的应用不会出现在结果中
+     */
+    QHash<int, ProcessInfo> waitForProcessWindows(const QVector<int> &appIndexes);
+    /**
+     * @brief 把探测到的进程信息补齐配置字段并登记到 externalAppList
+     * @param app     应用配置
+     * @param process 待登记的进程信息
+     */
+    void registerExternalProcess(AppConfig &app, ProcessInfo &process);
+    /**
+     * @brief 把已经找到的外部程序窗口嵌入为标签页
+     * @param app         应用配置
+     * @param process     已探测到的进程信息，hwnd 必须有效
+     * @param insertIndex 标签插入位置，小于 0 时追加到末尾
+     */
+    void embedProcessWindow(AppConfig &app, ProcessInfo &process, int insertIndex);
+    /**
      * @brief 加载网页应用（QCefView / CEF 内核实现）
      * @param app         应用配置
      * @param insertIndex 标签插入位置，小于 0 时追加到末尾

@@ -1,5 +1,7 @@
 #include "ExternalAppWindow.h"
 
+#include <QCoreApplication>
+#include <QEventLoop>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
@@ -224,27 +226,96 @@ void ExternalAppWindow::loadApps(bool isReload)
         {
             prestartApps();
         }
-        // 第二阶段：仍按配置顺序创建标签，保证标签顺序与配置一致；
-        // 此时外部程序大多已就绪，窗口查找通常一次即可命中
-        for (int i = 1; i <= config.appCount; i++)
+        // 立即让全屏窗口先绘制一帧：后续加载是同步阻塞的，不先处理一次事件循环的话，
+        // 窗口要等所有应用加载完才会第一次绘制，用户会长时间看到桌面或黑屏
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
+        // 第二阶段：按配置顺序创建标签，保证第一个标签就是配置里的第一个应用。
+        // 普通外部程序若此刻窗口尚未出现，先登记下来，留到下一阶段统一并行等待，
+        // 避免像旧实现那样在单个应用上阻塞，导致后面所有标签都要排队
+        QVector<int> pendingExternalIndexes;
+        QVector<int> pptAppIndexes;
+        for (int i = 0; i < config.appCount; i++)
         {
-            if (config.appList[i - 1].appPath.startsWith("http://") ||
-                config.appList[i - 1].appPath.startsWith("https://"))
+            AppConfig &app = config.appList[i];
+            if (app.appPath.startsWith("http://") || app.appPath.startsWith("https://"))
             {
-                loadWebPage(config.appList[i - 1], i - 1);
+                loadWebPage(app, i);
+                // 每建好一个网页标签就处理一次事件循环，让标签栏与页面尽早刷新出来
+                QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+                continue;
             }
-            else if (config.appList[i - 1].appPath.contains(".ppt"))
+            if (app.appPath.contains(".ppt"))
             {
-                startAndPlayPpt(config.appList[i - 1], i - 1);
+                pptAppIndexes.append(i);
+                continue;
             }
-            else
+            // 预启动阶段已明确失败的应用不再进入等待，否则会白等满超时时长
+            if (!isReload && failedAppPaths.contains(app.appPath))
             {
-                startExternalProgram(config.appList[i - 1], isReload, i - 1);
+                qDebug() << "prestart process failed, skip embedding, app path = " << app.appPath;
+                continue;
             }
+            // 未经 prestartApps() 拉起过的应用在这里保底启动，
+            // 已预启动的应用不再重复启动，避免误杀掉刚拉起的进程
+            if (!isReload && !prestartedAppPaths.contains(app.appPath) && !startProcess(app))
+            {
+                qDebug() << "start process failed, app path = " << app.appPath;
+                continue;
+            }
+            // 快速通道：窗口已经就绪时立即嵌入，不进入等待队列
+            ProcessInfo process = probeProcessWindow(app);
+            if (process.hwnd != 0)
+            {
+                registerExternalProcess(app, process);
+                embedProcessWindow(app, process, i);
+                QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+                continue;
+            }
+            pendingExternalIndexes.append(i);
+        }
+
+        // 第三阶段：对第一轮未就绪的外部程序并行等待窗口，
+        // 总等待时长约等于“最慢的那个应用”，而不是各应用等待时间之和
+        if (!pendingExternalIndexes.isEmpty())
+        {
+            QHash<int, ProcessInfo> readyWindows = waitForProcessWindows(pendingExternalIndexes);
+            for (int i = 0; i < pendingExternalIndexes.size(); i++)
+            {
+                const int appIndex = pendingExternalIndexes[i];
+                AppConfig &app = config.appList[appIndex];
+                if (!readyWindows.contains(appIndex))
+                {
+                    qDebug() << "get process window failed, processName = " << app.processName
+                             << ", processTitle = " << app.windowTitle << ", appPath = " << app.appPath;
+                    continue;
+                }
+                ProcessInfo process = readyWindows.value(appIndex);
+                embedProcessWindow(app, process, appIndex);
+                // 嵌入完成后立即让宿主窗口绘制一次，避免所有外部程序都嵌完才一起显示
+                QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            }
+        }
+
+        // 第四阶段：PPT 通过 ActiveQt 调用 WPS/PowerPoint，必须在主线程串行执行，
+        // 放到最后处理，避免放映窗口的启动耗时阻塞前面所有标签的创建
+        for (int i = 0; i < pptAppIndexes.size(); i++)
+        {
+            startAndPlayPpt(config.appList[pptAppIndexes[i]], pptAppIndexes[i]);
         }
     }
     // 所有嵌入均已同步完成，这里只保留极短间隔让 Qt 处理一次布局，不再固定等待 1 秒
     Sleep(200);
+    // 首次加载时显式切回配置中的第一个应用：网页标签先建、外部程序与 PPT 后建，
+    // 按插入位置建标签会让当前页停在后建的那个标签上，这里归位到配置首项
+    if (!isReload && config.appCount > 0 && ui->tabWidget->count() > 0)
+    {
+        const int firstTabIndex = findTabIndexByAppId(config.appList[0].id);
+        if (firstTabIndex >= 0)
+        {
+            ui->tabWidget->setCurrentIndex(firstTabIndex);
+        }
+    }
     qDebug() << "ui->tabWidget->count() = " << ui->tabWidget->count();
     if (ui->tabWidget->count() <= 0 && !config.debugMode)
     {
@@ -517,6 +588,72 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload, int 
     {
         return;
     }
+    embedProcessWindow(app, process, insertIndex);
+}
+
+QHash<int, ProcessInfo> ExternalAppWindow::waitForProcessWindows(const QVector<int> &appIndexes)
+{
+    // 单轮探测间隔与总超时沿用 findProcessInfo 的取值：
+    // 窗口通常在外程序启动后数秒内出现，8 秒仍未出现则认为该程序没有可嵌入窗口
+    const int intervalMs = 100;
+    const int maxLoopCount = 8000 / intervalMs;
+    // 连续命中次数，用于确认窗口已稳定创建，避免抓到启动过程中的过渡态句柄
+    const int stableHitCount = 3;
+    QHash<int, ProcessInfo> result;
+    QHash<int, int> hitCounts;
+    for (int loop = 0; loop < maxLoopCount; loop++)
+    {
+        bool allReady = true;
+        for (int i = 0; i < appIndexes.size(); i++)
+        {
+            const int appIndex = appIndexes[i];
+            if (result.contains(appIndex))
+            {
+                continue;
+            }
+            AppConfig &app = config.appList[appIndex];
+            ProcessInfo candidate = probeProcessWindow(app);
+            if (candidate.hwnd == 0)
+            {
+                // 本轮未命中：清零该应用的连续命中次数，避免把不同轮次的偶然命中当成稳定窗口
+                hitCounts[appIndex] = 0;
+                allReady = false;
+                continue;
+            }
+            hitCounts[appIndex] = hitCounts.value(appIndex) + 1;
+            if (hitCounts.value(appIndex) < stableHitCount)
+            {
+                allReady = false;
+                continue;
+            }
+            // 连续命中次数达标，认为窗口已稳定：登记进程信息后交给调用方嵌入
+            registerExternalProcess(app, candidate);
+            result.insert(appIndex, candidate);
+        }
+        if (allReady)
+        {
+            break;
+        }
+        // 等待窗口期间继续处理界面事件（排除用户输入，避免加载中途触发交互导致重入），
+        // 让已创建的标签页保持可绘制，而不是整段加载期间界面完全冻结
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        Sleep(intervalMs);
+    }
+    return result;
+}
+
+void ExternalAppWindow::registerExternalProcess(AppConfig &app, ProcessInfo &process)
+{
+    // 补齐配置信息并登记到 externalAppList，供切页显隐、尺寸同步与热更新按 appId 精确匹配
+    process.processName = app.processName;
+    process.processPath = app.appPath;
+    process.tabName = app.tabName;
+    process.appId = app.id;
+    externalAppList.append(process);
+}
+
+void ExternalAppWindow::embedProcessWindow(AppConfig &app, ProcessInfo &process, int insertIndex)
+{
     //获取待嵌入的外部应用窗口
     qDebug() << "process.hwnd = " << process.hwnd << ", wid = " << (WId)process.hwnd;
 
@@ -529,7 +666,7 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload, int 
         qDebug() << "externanlWindow = " << externanlWindow << ", wid = " << externanlWindow->winId();
         externanlWindow->setParent(this->windowHandle());
         externanlWindow->setGeometry(0, 0, this->geometry().width(), this->geometry().height());
-        // findProcessInfo 已将本应用的进程信息按 appId 追加到 externalAppList，
+        // 等待阶段已把本应用的进程信息按 appId 追加到 externalAppList，
         // 这里只补充 Qt 窗口包装，标签创建交给统一的 addWindowToTabWidget 处理
         for (int i = 0; i < externalAppList.size(); i++)
         {
@@ -570,9 +707,23 @@ void ExternalAppWindow::startExternalProgram(AppConfig &app, bool isReload, int 
     SetWindowLongPtr(process.hwnd, GWL_STYLE, style);
     SetParent(process.hwnd, (HWND)host->winId());
 
-    // 外部窗口先铺满宿主控件，后续尺寸变化由 eventFilter 统一同步
+    // 先隐藏窗口，再按宿主尺寸改大小，最后延迟显示：
+    // 外部程序启动阶段 UI 线程往往正忙于加载文档/组件，非客户区（标题栏）的重绘会滞后。
+    // 如果改完尺寸立刻显示，它会先按旧的窗口宽度把标题栏画出来（左上角一小条标题栏残影），
+    // 直到处理完尺寸变更才铺满。这里保持隐藏状态完成尺寸变更，等它处理过尺寸消息后再显示，
+    // 显示时整块区域重新绘制，就不会出现小标题栏残影。
+    ShowWindow(process.hwnd, SW_HIDE);
     QRect rect = currentScreen->geometry();
     MoveWindow(process.hwnd, 0, 0, rect.width(), rect.height(), TRUE);
+    // 隐藏状态下完成尺寸变更后，先让出主线程一小段时间并驱动事件循环，
+    // 给外部程序机会处理 WM_SIZE / WM_NCCALCSIZE，随后再显示；
+    // 显示时它会按新尺寸重绘整块区域，不会留下按旧宽度绘制的小标题栏残影。
+    for (int i = 0; i < 8; i++)
+    {
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        Sleep(20);
+    }
+    ShowWindow(process.hwnd, SW_SHOWNA);
     // 启动尺寸校正定时器，抵消用户用鼠标拖动窗口边框造成的尺寸变化
     nativeHostWindows.insert(host, (WId)process.hwnd);
     host->installEventFilter(this);
