@@ -1,6 +1,9 @@
 #include "SoftwareCapture.h"
 
+#include "ProcessFactory.h"
+
 #include <QCefView.h>
+#include <QAxObject>
 #include <QCursor>
 #include <QCoreApplication>
 #include <QDir>
@@ -46,6 +49,8 @@ const int WEB_PREVIEW_HEIGHT = 800;
 const int WEB_LOAD_TIMEOUT_MS = 15000;
 /** @brief 网页加载结束后的渲染稳定等待时间（毫秒） */
 const int WEB_RENDER_SETTLE_MS = 1200;
+/** @brief 演示文稿第一页导出图片的宽度（像素），高度按页面比例计算 */
+const int PPT_EXPORT_WIDTH = 1280;
 
 /**
  * @brief EnumWindows 回调上下文：收集顶层窗口句柄
@@ -402,6 +407,154 @@ QImage grabScreenRegion(const QRect &globalRect)
     return screenPixmap.copy(sourceRect).toImage();
 }
 
+/** @brief 获取当前正在运行的演示文稿宿主进程 id 集合（前置声明） */
+QSet<quint64> presentationProcessIds(ProcessUtils *processUtils);
+
+/** @brief 关闭本次打开的演示文稿并清理本次预览拉起的进程（前置声明） */
+void closePresentationApp(QAxObject &powerpoint, QAxObject *presentations, ProcessUtils *processUtils,
+                          const QSet<quint64> &processesBefore);
+
+/**
+ * @brief 通过 Office/WPS 的 COM 接口把演示文稿第一页导出为图片
+ *
+ * 相比“启动 PowerPoint 再抓窗口”，COM 导出得到的一定是第一页，
+ * 不受编辑窗口当前停在哪一页、窗口是否可见、是否已进入放映的影响。
+ *
+ * @param filePath 演示文稿完整路径
+ * @return 第一页画面，失败返回空图（由调用方回退到窗口抓取）
+ */
+QImage exportFirstSlideByCom(const QString &filePath)
+{
+    // 记录调用前已存在的演示进程，用于结束时判断哪些进程是本次预览新拉起的
+    std::unique_ptr<ProcessUtils> processUtils(ProcessFactory::newInstance());
+    const QSet<quint64> processesBefore = presentationProcessIds(processUtils.get());
+
+    QAxObject powerpoint(QStringLiteral("PowerPoint.Application"));
+    if (powerpoint.isNull())
+    {
+        return QImage();
+    }
+    // 不显示编辑窗口，避免导出过程中弹出整套 PowerPoint/WPS 界面
+    powerpoint.setProperty("Visible", false);
+    QAxObject *presentations = powerpoint.querySubObject("Presentations");
+    if (presentations == nullptr)
+    {
+        closePresentationApp(powerpoint, nullptr, processUtils.get(), processesBefore);
+        return QImage();
+    }
+    // Open(FileName, ReadOnly, Untitled, WithWindow)：只读打开且不创建编辑窗口
+    QAxObject *presentation = presentations->querySubObject("Open(const QString&, int, int, int)",
+                                                            QDir::toNativeSeparators(filePath), true, false, false);
+    if (presentation == nullptr)
+    {
+        closePresentationApp(powerpoint, presentations, processUtils.get(), processesBefore);
+        return QImage();
+    }
+
+    QImage image;
+    QAxObject *slides = presentation->querySubObject("Slides");
+    QAxObject *firstSlide = (slides != nullptr) ? slides->querySubObject("Item(int)", 1) : nullptr;
+    if (firstSlide != nullptr)
+    {
+        // 按页面实际宽高比计算导出高度，保证第一页不被拉伸
+        int exportHeight = PPT_EXPORT_WIDTH * 3 / 4;
+        QAxObject *pageSetup = presentation->querySubObject("PageSetup");
+        if (pageSetup != nullptr)
+        {
+            const double slideWidth = pageSetup->property("SlideWidth").toDouble();
+            const double slideHeight = pageSetup->property("SlideHeight").toDouble();
+            if (slideWidth > 0.0)
+            {
+                exportHeight = qRound(PPT_EXPORT_WIDTH * slideHeight / slideWidth);
+            }
+        }
+        const QString tempFile = QDir(QDir::tempPath())
+                                     .filePath(QStringLiteral("mdc_ppt_preview_%1.png")
+                                                   .arg(QCoreApplication::applicationPid()));
+        firstSlide->dynamicCall("Export(const QString&, const QString&, int, int)",
+                                QDir::toNativeSeparators(tempFile), QStringLiteral("PNG"), PPT_EXPORT_WIDTH,
+                                exportHeight);
+        // Export 是同步调用，返回后即可读取；读不到说明当前 Office/WPS 不支持该导出接口
+        image = QImage(tempFile);
+        QFile::remove(tempFile);
+    }
+
+    // 关闭本次打开的文档且不保存，避免留下未关闭的演示文稿
+    presentation->dynamicCall("Close()");
+    closePresentationApp(powerpoint, presentations, processUtils.get(), processesBefore);
+    return image;
+}
+
+/**
+ * @brief 获取当前正在运行的演示文稿宿主进程 id 集合
+ *
+ * PowerPoint 与 WPS 演示都可能承载 PowerPoint.Application 这个 COM 接口，
+ * 因此两者都要统计，用于区分“用户本来就在运行的进程”和“本次预览新拉起的进程”。
+ *
+ * @param processUtils 进程工具，可空
+ * @return 进程 id 集合
+ */
+QSet<quint64> presentationProcessIds(ProcessUtils *processUtils)
+{
+    QSet<quint64> ids;
+    if (processUtils == nullptr)
+    {
+        return ids;
+    }
+    const QStringList processNames = {QStringLiteral("POWERPNT.EXE"), QStringLiteral("wpp.exe")};
+    for (int i = 0; i < processNames.size(); i++)
+    {
+        const QVector<ProcessInfo> processList = processUtils->getProcessInfo(processNames[i]);
+        for (int j = 0; j < processList.size(); j++)
+        {
+            ids.insert(processList[j].pid);
+        }
+    }
+    return ids;
+}
+
+/**
+ * @brief 关闭本次打开的演示文稿，并清理本次预览新拉起的演示进程
+ *
+ * WPS/PowerPoint 的 Quit 调用不一定会真正退出进程，若不清理，反复生成演示文稿预览
+ * 会残留不可见的后台进程。这里只结束“本次预览新拉起”的进程，绝不影响用户原有的文稿。
+ *
+ * @param powerpoint     PowerPoint.Application COM 对象
+ * @param presentations  Presentations 集合对象
+ * @param processUtils   进程工具，可空
+ * @param processesBefore 导出前已存在的演示进程 id 集合
+ */
+void closePresentationApp(QAxObject &powerpoint, QAxObject *presentations, ProcessUtils *processUtils,
+                          const QSet<quint64> &processesBefore)
+{
+    if (presentations != nullptr && processesBefore.isEmpty() && presentations->property("Count").toInt() == 0)
+    {
+        // 导出前用户没有打开任何文稿，才可以退出整个应用
+        powerpoint.dynamicCall("Quit()");
+    }
+    if (processUtils == nullptr || !processesBefore.isEmpty())
+    {
+        // 用户原本就开着演示软件时不做任何强杀，避免影响到用户正在编辑的文稿
+        return;
+    }
+    // 给 Quit 一点生效时间，仍残留的进程再强制结束
+    QElapsedTimer timer;
+    timer.start();
+    while (timer.elapsed() < PROCESS_CLOSE_TIMEOUT_MS)
+    {
+        QThread::msleep(100);
+        if (presentationProcessIds(processUtils).isEmpty())
+        {
+            return;
+        }
+    }
+    const QSet<quint64> processIds = presentationProcessIds(processUtils);
+    for (QSet<quint64>::const_iterator it = processIds.constBegin(); it != processIds.constEnd(); ++it)
+    {
+        processUtils->killProcess(*it);
+    }
+}
+
 /**
  * @brief 强制结束指定进程（若仍在运行）
  * @param pid 进程 id
@@ -585,11 +738,20 @@ bool SoftwareCapture::capturePreview(const SoftwareItem &software, const QString
         return false;
     }
 
-    // 网页走内置 CEF 渲染抓取，桌面应用/演示文稿走“启动进程 + 抓窗口”
+    // 网页走内置 CEF 渲染抓取，演示文稿优先导出第一页，桌面应用走“启动进程 + 抓窗口”
     QImage image;
     if (software.type == QStringLiteral("web"))
     {
         image = captureWebPage(software, detectedTitle);
+    }
+    else if (software.type == QStringLiteral("ppt"))
+    {
+        image = capturePptFirstSlide(software, parent, detectedTitle);
+        if (image.isNull())
+        {
+            // 当前 Office/WPS 不支持 COM 导出时，退回“打开文件后抓窗口”的方式
+            image = captureLaunchedWindow(software, parent, detectedTitle);
+        }
     }
     else
     {
@@ -764,6 +926,41 @@ QImage SoftwareCapture::captureWebPage(const SoftwareItem &software, QString *de
     return image;
 #else
     Q_UNUSED(software)
+    Q_UNUSED(detectedTitle)
+    return QImage();
+#endif
+}
+
+QImage SoftwareCapture::capturePptFirstSlide(const SoftwareItem &software, QWidget *parent, QString *detectedTitle)
+{
+#ifdef Q_OS_WIN
+    const QString filePath = QDir::fromNativeSeparators(software.path);
+    if (!QFileInfo::exists(filePath))
+    {
+        return QImage();
+    }
+
+    // 拉起 Office/WPS 并导出第一页可能持续数秒，用进度提示避免界面看起来卡死
+    QProgressDialog progress(QStringLiteral("正在导出演示文稿第一页，请稍候…"), QString(), 0, 0, parent);
+    progress.setWindowTitle(QStringLiteral("生成预览图"));
+    progress.setWindowModality(Qt::ApplicationModal);
+    progress.setCancelButton(nullptr);
+    progress.setMinimumDuration(0);
+    progress.show();
+    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
+    const QImage image = exportFirstSlideByCom(filePath);
+    progress.close();
+    if (!image.isNull() && detectedTitle != nullptr)
+    {
+        // PowerPoint/WPS 的窗口标题中包含“文档名”，用不带扩展名的文件名作为匹配前缀最稳定；
+        // 自动填充后用户仍可在对话框中手工改写
+        *detectedTitle = QFileInfo(filePath).completeBaseName();
+    }
+    return image;
+#else
+    Q_UNUSED(software)
+    Q_UNUSED(parent)
     Q_UNUSED(detectedTitle)
     return QImage();
 #endif

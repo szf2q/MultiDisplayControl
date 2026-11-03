@@ -123,8 +123,8 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     previewLabel->setText(QStringLiteral("暂无预览"));
     captureButton = new QPushButton(QStringLiteral("获取预览与窗口标题"), this);
     QLabel *previewHint = new QLabel(
-        QStringLiteral("桌面应用/演示文稿会启动一次并抓取第一个界面；网页会加载地址后截取页面首屏。"
-                       "抓取成功后自动填充窗口标题。"), this);
+        QStringLiteral("演示文稿会导出第一页作为预览；桌面应用会启动一次并抓取第一个界面；网页会加载地址后截取"
+                       "页面首屏。窗口标题自动识别后仍可手工修改。"), this);
     previewHint->setObjectName(QStringLiteral("hintLabel"));
     previewHint->setWordWrap(true);
 
@@ -281,9 +281,9 @@ void SoftwareEditDialog::onCapture()
     }
 
     m_previewGenerated = true;
-    if (type != "ppt" && !detectedTitle.isEmpty())
+    if (!detectedTitle.isEmpty())
     {
-        // 自动填充窗口标题；用户仍可改写成更稳定的标题前缀
+        // 自动填充窗口标题（演示文稿用文档名），填充后仍可在输入框中手工修改
         windowTitleEdit->setText(detectedTitle);
     }
     loadPreviewImage();

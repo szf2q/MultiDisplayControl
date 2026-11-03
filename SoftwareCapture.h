@@ -17,7 +17,8 @@ class QWidget;
  *
  * 支持范围：
  *  - 桌面应用：直接启动可执行文件后抓取其窗口；
- *  - 演示文稿：通过 POWERPNT.EXE 打开文件后抓取其窗口；
+ *  - 演示文稿：通过 PowerPoint/WPS 的 COM 接口把第一页导出为图片（更稳定，且不会抓到编辑窗口
+ *    当前的任意一页），失败时退回“打开文件后抓窗口”的旧方式；
  *  - 网页：用内置 CEF 渲染一个临时窗口，加载完成后抓取页面首屏。
  *
  * 非 Windows 平台（如银河麒麟）没有通用窗口抓取手段，统一返回失败并回退类型图标。
@@ -94,6 +95,15 @@ class SoftwareCapture
      * @return 抓取到的图像，失败返回空图
      */
     static QImage captureWebPage(const SoftwareItem &software, QString *detectedTitle);
+
+    /**
+     * @brief 导出演示文稿第一页作为预览图
+     * @param software      软件条目，path 为 .ppt/.pptx 文件
+     * @param parent        进度提示父窗口
+     * @param detectedTitle 输出参数，可空；成功时写入文档名（PowerPoint 窗口标题中包含文档名）
+     * @return 第一页画面，失败返回空图（由调用方回退到窗口抓取）
+     */
+    static QImage capturePptFirstSlide(const SoftwareItem &software, QWidget *parent, QString *detectedTitle);
 
     /**
      * @brief 拆分命令行参数字符串（支持双引号包裹的参数）
