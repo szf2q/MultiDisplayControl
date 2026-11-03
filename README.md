@@ -125,9 +125,10 @@ MultiDisplayControl/
 
 单例（静态成员 `GlobalKeyWatcher::watcher`），通过 `RegisterHotKey` 注册全局热键，并安装 `QAbstractNativeEventFilter` 拦截 `WM_HOTKEY` 消息后以信号方式广播：
 
-- `switchScreenKeyPressed(int screenIndex, QString keyMessage)`
-- `altAndRPressed()`
-- `quitKeyPressed(QString keyMessage)`
+- `switchScreenKeyPressed(int screenIndex, QString keyMessage)` — `Alt + 1~7` / `Alt + 小键盘 1~7`
+- `altAndRPressed()` — `Alt + R`
+- `quitKeyPressed(QString keyMessage)` — `Alt + Q` / `Alt + F4`
+- `helpKeyPressed()` — `Alt + H`，弹出快捷键说明对话框（置顶显示，回车或 Esc 关闭）
 
 ## 7. 配置文件说明
 

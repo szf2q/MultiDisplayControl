@@ -17,6 +17,7 @@ void GlobalKeyWatcher::init()
 void GlobalKeyWatcher::registerHotkey()
 {
     RegisterHotKey(nullptr, 10, MOD_ALT, 'R');
+    RegisterHotKey(nullptr, 11, MOD_ALT, 'H');
     RegisterHotKey(nullptr, 20, MOD_ALT, 'Q');
     RegisterHotKey(nullptr, 21, MOD_ALT, VK_F4);
     RegisterHotKey(nullptr, 31, MOD_ALT, VK_NUMPAD1);
@@ -52,6 +53,13 @@ bool GlobalKeyWatcher::nativeEventFilter(const QByteArray &eventType, void *mess
             // ALT+R
             qDebug() << "组合键Alt+R触发";
             emit altAndRPressed();
+            return true;
+        }
+        else if (msg->wParam == 11)
+        {
+            // ALT+H：弹出快捷键说明界面
+            qDebug() << "组合键Alt+H触发";
+            emit helpKeyPressed();
             return true;
         }
         else if (msg->wParam == 20 || msg->wParam == 21)

@@ -25,6 +25,8 @@ class GlobalKeyWatcher : public QObject, public QAbstractNativeEventFilter
     void quitKeyPressed(const QString &keyMessage);
     void altAndF5Pressed(void);
     void altAndRPressed(void);
+    /** @brief Alt+H 被按下，用于弹出快捷键说明界面 */
+    void helpKeyPressed(void);
 };
 
 #endif  // GLOBALKEYWATCHER_H
