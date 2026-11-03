@@ -153,7 +153,15 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
         }
         markDirty();
     });
-    connect(layoutCanvas, &ScreenLayoutCanvas::configChanged, this, [this]() { markDirty(); });
+    connect(layoutCanvas, &ScreenLayoutCanvas::configChanged, this, [this]() {
+        // 屏幕布局变化可能带来绑定关系增删（如从屏幕移除软件），
+        // 只需同步“已绑定”标记与拖拽能力，不重建清单以免选中项和滚动位置跳动
+        if (libraryPanel != nullptr)
+        {
+            libraryPanel->refreshBindingMarks();
+        }
+        markDirty();
+    });
     connect(layoutCanvas, &ScreenLayoutCanvas::softwareDropped, this,
             [this](int screenRow, const QString &softwareId, int insertRow) {
                 onSoftwareDropped(screenRow, softwareId, insertRow);
@@ -357,40 +365,19 @@ void ManagementWindow::onSoftwareDropped(int screenRow, const QString &softwareI
     {
         return;
     }
+    // 同一软件只允许绑定到一块屏幕：已绑定到任意屏幕时拒绝再次绑定。
+    // 软件清单侧已通过去掉拖拽标志阻止拖出，这里做二次防御，兼容历史配置或其它入口
+    const int boundRow = boundScreenRow(softwareId);
+    if (boundRow >= 0)
+    {
+        setStatusMessage(QStringLiteral("“%1”已绑定到 %2 号屏，请先移除后再绑定。")
+                             .arg(software->name)
+                             .arg(boundRow + 1),
+                         true);
+        return;
+    }
+
     ScreenConfig &target = m_config.screenList[screenRow];
-    for (int i = 0; i < target.assignments.size(); i++)
-    {
-        if (target.assignments[i].softwareId == softwareId)
-        {
-            setStatusMessage(QStringLiteral("“%1”已在该屏幕上，不能重复添加。").arg(software->name), true);
-            return;
-        }
-    }
-
-    // 分配规则：桌面应用独占，网页可复用；桌面应用拖到新屏时自动从原屏移除
-    int movedFromRow = -1;
-    if (software->type != "web")
-    {
-        for (int i = 0; i < m_config.screenList.size(); i++)
-        {
-            if (i == screenRow)
-            {
-                continue;
-            }
-            QList<ScreenAssignment> &assignments = m_config.screenList[i].assignments;
-            for (int j = assignments.size() - 1; j >= 0; j--)
-            {
-                if (assignments[j].softwareId != softwareId)
-                {
-                    continue;
-                }
-                assignments.removeAt(j);
-                m_config.screenList[i].appCount = assignments.size();
-                movedFromRow = i;
-            }
-        }
-    }
-
     int insertPosition = insertRow;
     if (insertPosition < 0 || insertPosition > target.assignments.size())
     {
@@ -403,19 +390,11 @@ void ManagementWindow::onSoftwareDropped(int screenRow, const QString &softwareI
     target.appCount = target.assignments.size();
 
     layoutCanvas->refresh();
+    // 绑定关系变化后立即刷新软件清单，让“已绑定 N号屏”标记与禁止拖拽状态同步生效；
+    // 这里只更新标记而不重建列表，避免拖拽完成后选中项与滚动位置跳回顶部
+    libraryPanel->refreshBindingMarks();
     markDirty();
-
-    if (movedFromRow >= 0)
-    {
-        setStatusMessage(QStringLiteral("“%1”已从 %2 号屏移入 %3 号屏（桌面应用独占）。")
-                             .arg(software->name)
-                             .arg(movedFromRow + 1)
-                             .arg(screenRow + 1));
-    }
-    else
-    {
-        setStatusMessage(QStringLiteral("已将“%1”放入 %2 号屏。").arg(software->name).arg(screenRow + 1));
-    }
+    setStatusMessage(QStringLiteral("已将“%1”绑定到 %2 号屏。").arg(software->name).arg(screenRow + 1));
 }
 
 void ManagementWindow::onGlobalSettingChanged()
@@ -462,7 +441,7 @@ bool ManagementWindow::validate(QString *error) const
         }
         return false;
     }
-    // 引用完整性 + 同屏去重 + 桌面应用独占
+    // 引用完整性 + 同屏去重 + 跨屏唯一（同一软件只能绑定一块屏幕）
     for (int i = 0; i < m_config.screenList.size(); i++)
     {
         const ScreenConfig &screen = m_config.screenList[i];
@@ -489,10 +468,8 @@ bool ManagementWindow::validate(QString *error) const
                     return false;
                 }
             }
-            if (software->type == "web")
-            {
-                continue;
-            }
+            // 同一软件只允许绑定到一块屏幕（网页也不例外），
+            // 用于拦截历史配置或其它入口产生的跨屏重复绑定
             for (int m = 0; m < m_config.screenList.size(); m++)
             {
                 if (m == i)
@@ -505,7 +482,7 @@ bool ManagementWindow::validate(QString *error) const
                     {
                         if (error != nullptr)
                         {
-                            *error = QStringLiteral("桌面应用“%1”同时分配在 %2 号屏与 %3 号屏，只能保留一处。")
+                            *error = QStringLiteral("“%1”同时分配在 %2 号屏与 %3 号屏，同一软件只能绑定一块屏幕。")
                                          .arg(software->name)
                                          .arg(i + 1)
                                          .arg(m + 1);
@@ -558,4 +535,24 @@ const SoftwareItem *ManagementWindow::findSoftware(const QString &softwareId) co
         }
     }
     return nullptr;
+}
+
+int ManagementWindow::boundScreenRow(const QString &softwareId) const
+{
+    if (softwareId.isEmpty())
+    {
+        return -1;
+    }
+    for (int i = 0; i < m_config.screenList.size(); i++)
+    {
+        const QList<ScreenAssignment> &assignments = m_config.screenList[i].assignments;
+        for (int j = 0; j < assignments.size(); j++)
+        {
+            if (assignments[j].softwareId == softwareId)
+            {
+                return i;
+            }
+        }
+    }
+    return -1;
 }

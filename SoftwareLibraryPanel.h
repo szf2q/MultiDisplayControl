@@ -135,6 +135,14 @@ class SoftwareLibraryPanel : public QWidget
     void refresh();
 
     /**
+     * @brief 只刷新“已绑定屏幕”标记与可拖拽状态
+     *
+     * 与 refresh() 相比不重建列表项，避免屏幕布局连续变化（如逐字修改屏幕名称）时
+     * 列表反复清空重建导致选中项与滚动位置跳动。
+     */
+    void refreshBindingMarks();
+
+    /**
      * @brief 获取当前选中的软件 id
      * @return 软件 id，未选中返回空字符串
      */
@@ -210,6 +218,18 @@ class SoftwareLibraryPanel : public QWidget
      * @return true 表示已被引用
      */
     bool isReferenced(const QString &softwareId) const;
+
+    /**
+     * @brief 生成“已绑定屏幕”标记文本
+     *
+     * 同一软件只允许绑定到一块屏幕，正常返回形如“已绑定 1号屏”；
+     * 若历史配置里同一网页被多块屏幕引用，则返回“已绑定 1、3号屏”，
+     * 既用于列表标记展示，也作为禁止再次绑定的视觉依据。
+     *
+     * @param softwareId 软件 id
+     * @return 标记文本，未绑定时返回空字符串
+     */
+    QString boundScreenText(const QString &softwareId) const;
 
     /**
      * @brief 从软件清单中查找条目

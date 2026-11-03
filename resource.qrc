@@ -289,6 +289,5 @@
         <file>qss/images_dark/vline.svg</file>
         <file>qss/dark.css</file>
         <file>qss/manager.css</file>
-        <file>app.manifest</file>
     </qresource>
 </RCC>

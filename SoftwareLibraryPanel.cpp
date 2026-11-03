@@ -17,6 +17,7 @@
 #include <QMimeData>
 #include <QPixmap>
 #include <QPushButton>
+#include <QStringList>
 #include <QStyle>
 #include <QVBoxLayout>
 
@@ -471,11 +472,25 @@ void SoftwareLibraryPanel::refresh()
             {
                 continue;
             }
+            // 已绑定到屏幕的软件在列表第二行显示标记，便于一眼识别不可再绑定的条目
+            const QString boundText = boundScreenText(software.id);
+            QString typeLine = typeDisplayName(software.type);
+            if (!boundText.isEmpty())
+            {
+                typeLine += QStringLiteral(" · ") + boundText;
+            }
             QListWidgetItem *item = new QListWidgetItem(listWidget);
             item->setIcon(iconForSoftware(software));
-            item->setText(QString("%1\n%2").arg(software.name).arg(typeDisplayName(software.type)));
-            item->setToolTip(software.path);
+            item->setText(QString("%1\n%2").arg(software.name).arg(typeLine));
+            item->setToolTip(boundText.isEmpty() ? software.path
+                                                 : software.path + QStringLiteral("\n") + boundText);
             item->setData(Qt::UserRole, software.id);
+            if (!boundText.isEmpty())
+            {
+                // 已绑定的软件不允许再次绑定：去掉拖拽标志，从拖拽源头阻止拖出，
+                // 避免用户拖到屏幕后才收到“已绑定”的失败提示
+                item->setFlags(item->flags() & ~Qt::ItemIsDragEnabled);
+            }
             // 与 128x72 缩略图匹配的列表项高度，留出上下内边距
             item->setSizeHint(QSize(0, 84));
         }
@@ -486,6 +501,44 @@ void SoftwareLibraryPanel::refresh()
         selectSoftware(keepId);
     }
     onCurrentItemChanged();
+}
+
+void SoftwareLibraryPanel::refreshBindingMarks()
+{
+    for (int i = 0; i < listWidget->count(); i++)
+    {
+        QListWidgetItem *item = listWidget->item(i);
+        if (item == nullptr)
+        {
+            continue;
+        }
+        const QString softwareId = item->data(Qt::UserRole).toString();
+        const SoftwareItem *software = findSoftware(softwareId);
+        if (software == nullptr)
+        {
+            continue;
+        }
+        const QString boundText = boundScreenText(softwareId);
+        QString typeLine = typeDisplayName(software->type);
+        if (!boundText.isEmpty())
+        {
+            typeLine += QStringLiteral(" · ") + boundText;
+        }
+        item->setText(QString("%1\n%2").arg(software->name).arg(typeLine));
+        item->setToolTip(boundText.isEmpty() ? software->path
+                                             : software->path + QStringLiteral("\n") + boundText);
+        // 绑定状态变化后同步拖拽能力：已绑定不可再拖出，解除绑定后恢复可拖拽
+        Qt::ItemFlags flags = item->flags();
+        if (boundText.isEmpty())
+        {
+            flags |= Qt::ItemIsDragEnabled;
+        }
+        else
+        {
+            flags &= ~Qt::ItemIsDragEnabled;
+        }
+        item->setFlags(flags);
+    }
 }
 
 QString SoftwareLibraryPanel::currentSoftwareId() const
@@ -715,6 +768,33 @@ bool SoftwareLibraryPanel::isReferenced(const QString &softwareId) const
         }
     }
     return false;
+}
+
+QString SoftwareLibraryPanel::boundScreenText(const QString &softwareId) const
+{
+    if (m_config == nullptr || softwareId.isEmpty())
+    {
+        return QString();
+    }
+    QStringList boundRows;
+    for (int i = 0; i < m_config->screenList.size(); i++)
+    {
+        const QList<ScreenAssignment> &assignments = m_config->screenList[i].assignments;
+        for (int j = 0; j < assignments.size(); j++)
+        {
+            if (assignments[j].softwareId == softwareId)
+            {
+                // 同一屏幕若因历史配置重复引用，只记录一次屏幕序号
+                boundRows << QString::number(i + 1);
+                break;
+            }
+        }
+    }
+    if (boundRows.isEmpty())
+    {
+        return QString();
+    }
+    return QStringLiteral("已绑定 %1号屏").arg(boundRows.join(QStringLiteral("、")));
 }
 
 SoftwareItem *SoftwareLibraryPanel::findSoftware(const QString &softwareId)

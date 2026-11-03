@@ -148,6 +148,16 @@ class ManagementWindow : public QWidget
      */
     const SoftwareItem *findSoftware(const QString &softwareId) const;
 
+    /**
+     * @brief 查找软件当前绑定的屏幕行号
+     *
+     * 用于禁止同一软件重复绑定：绑定关系按软件 id 在全部屏幕的 assignments 中查找。
+     *
+     * @param softwareId 软件 id
+     * @return 屏幕行号（从 0 开始），未绑定返回 -1
+     */
+    int boundScreenRow(const QString &softwareId) const;
+
     /** 工作配置（所有面板直接读写） */
     MultiScreenConfig m_config;
     /** 是否存在未保存修改 */
