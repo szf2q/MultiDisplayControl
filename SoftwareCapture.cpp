@@ -1,4 +1,4 @@
-#include "SoftwareCapture.h"
+﻿#include "SoftwareCapture.h"
 
 #include "ProcessFactory.h"
 
@@ -793,8 +793,8 @@ QImage SoftwareCapture::captureLaunchedWindow(const SoftwareItem &software, QWid
     }
 
     // 抓图可能持续数秒，用无取消按钮的进度提示避免界面看起来卡死
-    QProgressDialog progress(QStringLiteral("正在启动软件并截取预览图，请稍候…"), QString(), 0, 0, parent);
-    progress.setWindowTitle(QStringLiteral("生成预览图"));
+    QProgressDialog progress(QString::fromUtf8("正在启动软件并截取预览图，请稍候…"), QString(), 0, 0, parent);
+    progress.setWindowTitle(QString::fromUtf8("生成预览图"));
     progress.setWindowModality(Qt::ApplicationModal);
     progress.setCancelButton(nullptr);
     progress.setMinimumDuration(0);
@@ -941,8 +941,8 @@ QImage SoftwareCapture::capturePptFirstSlide(const SoftwareItem &software, QWidg
     }
 
     // 拉起 Office/WPS 并导出第一页可能持续数秒，用进度提示避免界面看起来卡死
-    QProgressDialog progress(QStringLiteral("正在导出演示文稿第一页，请稍候…"), QString(), 0, 0, parent);
-    progress.setWindowTitle(QStringLiteral("生成预览图"));
+    QProgressDialog progress(QString::fromUtf8("正在导出演示文稿第一页，请稍候…"), QString(), 0, 0, parent);
+    progress.setWindowTitle(QString::fromUtf8("生成预览图"));
     progress.setWindowModality(Qt::ApplicationModal);
     progress.setCancelButton(nullptr);
     progress.setMinimumDuration(0);

@@ -178,6 +178,8 @@ class ManagementWindow : public QWidget
     QCheckBox *disableWinKeyCheck = nullptr;
     /** 嵌入应用去掉边框开关：开启后桌面应用客户区铺满整块屏幕，需重启后生效 */
     QCheckBox *stripAppBorderCheck = nullptr;
+    /** 禁用 GPU 加速开关：仅在机型/驱动出现网页渲染异常时开启，需重启后生效 */
+    QCheckBox *disableGpuAccelerationCheck = nullptr;
     QPushButton *saveButton = nullptr;
     QPushButton *reloadButton = nullptr;
     QPushButton *closeButton = nullptr;

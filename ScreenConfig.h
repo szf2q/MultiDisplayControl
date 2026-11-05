@@ -133,6 +133,14 @@ struct MultiScreenConfig
      * 该开关只在应用嵌入时生效，修改后需重启主程序或重新加载应用。
      */
     bool stripAppBorder = false;
+    /**
+     * @brief 是否禁用 CEF 的 GPU 加速
+     *
+     * 默认 false（保留 GPU 加速）。多屏、4K 分辨率下关闭 GPU 会让网页退化为软件渲染，
+     * 多个网页同时展示时会出现明显卡顿；仅在个别机型/驱动出现黑屏等渲染异常时开启。
+     * 该开关只在 CEF 初始化时生效，修改后需重启主程序。
+     */
+    bool disableGpuAcceleration = false;
     /** 单块屏幕配置列表，顺序即屏幕序号 */
     QList<ScreenConfig> screenList;
     /** 全局软件清单 */

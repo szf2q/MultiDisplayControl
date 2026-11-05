@@ -1,4 +1,4 @@
-#include "ScreenLayoutCanvas.h"
+﻿﻿#include "ScreenLayoutCanvas.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -59,7 +59,7 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
     if (screens.isEmpty())
     {
         painter.setPen(QColor(150, 180, 210));
-        painter.drawText(rect(), Qt::AlignCenter, QStringLiteral("未检测到显示器"));
+        painter.drawText(rect(), Qt::AlignCenter, QString::fromUtf8("未检测到显示器"));
         return;
     }
 
@@ -98,14 +98,14 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
         painter.drawRoundedRect(targetRect.adjusted(1, 1, -1, -1), 8, 8);
 
         QFont font = painter.font();
-        font.setFamily(QStringLiteral("微软雅黑"));
+        font.setFamily(QString::fromUtf8("微软雅黑"));
         font.setPixelSize(13);
         font.setBold(highlighted || primary);
         painter.setFont(font);
         painter.setPen(highlighted || primary ? QColor(220, 240, 255) : QColor(170, 195, 220));
         const QString text = QString("%1%2\n%3×%4")
                                  .arg(screens[i]->name())
-                                 .arg(primary ? QStringLiteral("（主屏）") : QString())
+                                 .arg(primary ? QString::fromUtf8("（主屏）") : QString())
                                  .arg(geometry.width())
                                  .arg(geometry.height());
         painter.drawText(targetRect, Qt::AlignCenter, text);
@@ -189,7 +189,7 @@ void AppAssignmentList::onContextMenu(const QPoint &pos)
     }
     setCurrentItem(item);
     QMenu menu(this);
-    QAction *removeAction = menu.addAction(QStringLiteral("从该屏移除"));
+    QAction *removeAction = menu.addAction(QString::fromUtf8("从该屏移除"));
     if (menu.exec(mapToGlobal(pos)) == removeAction)
     {
         emit removeRequested(row(item));
@@ -211,11 +211,11 @@ ScreenCard::ScreenCard(int row, QWidget *parent) : QFrame(parent), m_row(row)
 
     nameEdit = new QLineEdit(this);
     nameEdit->setObjectName(QStringLiteral("screenNameEdit"));
-    nameEdit->setPlaceholderText(QStringLiteral("屏幕名称（可选）"));
+    nameEdit->setPlaceholderText(QString::fromUtf8("屏幕名称（可选）"));
 
-    dragHandle = new QLabel(QStringLiteral("⣿"), this);
+    dragHandle = new QLabel(QString::fromUtf8("⣿"), this);
     dragHandle->setObjectName(QStringLiteral("screenDragHandle"));
-    dragHandle->setToolTip(QStringLiteral("按住此处拖到另一张卡片可调整屏幕序号"));
+    dragHandle->setToolTip(QString::fromUtf8("按住此处拖到另一张卡片可调整屏幕序号"));
     dragHandle->setCursor(Qt::SizeAllCursor);
     dragHandle->setAlignment(Qt::AlignCenter);
     dragHandle->setFixedWidth(20);
@@ -236,7 +236,7 @@ ScreenCard::ScreenCard(int row, QWidget *parent) : QFrame(parent), m_row(row)
     offsetSpin->setRange(-10000, 10000);
     offsetSpin->setSingleStep(10);
     offsetSpin->setSuffix(QStringLiteral(" px"));
-    QLabel *offsetLabel = new QLabel(QStringLiteral("标签栏偏移"), this);
+    QLabel *offsetLabel = new QLabel(QString::fromUtf8("标签栏偏移"), this);
     offsetLabel->setObjectName(QStringLiteral("hintLabel"));
 
     QHBoxLayout *offsetLayout = new QHBoxLayout();
@@ -245,7 +245,7 @@ ScreenCard::ScreenCard(int row, QWidget *parent) : QFrame(parent), m_row(row)
     offsetLayout->addStretch(1);
     offsetLayout->addWidget(offsetSpin);
 
-    removeButton = new QPushButton(QStringLiteral("移除该屏"), this);
+    removeButton = new QPushButton(QString::fromUtf8("移除该屏"), this);
     removeButton->setObjectName(QStringLiteral("dangerButton"));
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
@@ -282,11 +282,11 @@ void ScreenCard::setScreen(int row, const ScreenConfig &screen, const MultiScree
 
     if (screen.displayName.isEmpty())
     {
-        displayLabel->setText(QStringLiteral("未绑定物理屏，保存后按序号回退匹配"));
+        displayLabel->setText(QString::fromUtf8("未绑定物理屏，保存后按序号回退匹配"));
     }
     else
     {
-        const QString primaryFlag = screen.primaryScreen ? QStringLiteral(" · 主屏") : QString();
+        const QString primaryFlag = screen.primaryScreen ? QString::fromUtf8(" · 主屏") : QString();
         displayLabel->setText(QString("%1 · %2×%3%4")
                                   .arg(screen.displayName)
                                   .arg(screen.geometry.width())
@@ -557,15 +557,15 @@ void ScreenLayoutCanvas::onAddScreen()
     }
     if (m_config->screenList.size() >= kMaxScreenCount)
     {
-        QMessageBox::information(this, QStringLiteral("添加屏幕"),
-                                 QStringLiteral("最多支持 %1 块屏幕（与 Alt+1~7 热键对应）。").arg(kMaxScreenCount));
+        QMessageBox::information(this, QString::fromUtf8("添加屏幕"),
+                                 QString::fromUtf8("最多支持 %1 块屏幕（与 Alt+1~7 热键对应）。").arg(kMaxScreenCount));
         return;
     }
     const QString displayName = findFreeScreenName();
     if (displayName.isEmpty())
     {
-        QMessageBox::information(this, QStringLiteral("添加屏幕"),
-                                 QStringLiteral("当前没有未绑定的显示器，请先接入更多显示器。"));
+        QMessageBox::information(this, QString::fromUtf8("添加屏幕"),
+                                 QString::fromUtf8("当前没有未绑定的显示器，请先接入更多显示器。"));
         return;
     }
 
@@ -607,15 +607,15 @@ void ScreenLayoutCanvas::onRemoveScreen()
     }
     if (m_config->screenList.size() <= 1)
     {
-        QMessageBox::information(this, QStringLiteral("删除屏幕"), QStringLiteral("至少需要保留一块屏幕。"));
+        QMessageBox::information(this, QString::fromUtf8("删除屏幕"), QString::fromUtf8("至少需要保留一块屏幕。"));
         return;
     }
     const int row = m_selectedRow;
     const QString name = m_config->screenList[row].screenTitle.isEmpty()
-                             ? QStringLiteral("%1号屏").arg(row + 1)
+                             ? QString::fromUtf8("%1号屏").arg(row + 1)
                              : m_config->screenList[row].screenTitle;
-    if (QMessageBox::question(this, QStringLiteral("删除屏幕"),
-                              QStringLiteral("确定删除“%1”？该屏上分配的软件会一并移除。").arg(name),
+    if (QMessageBox::question(this, QString::fromUtf8("删除屏幕"),
+                              QString::fromUtf8("确定删除“%1”？该屏上分配的软件会一并移除。").arg(name),
                               QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
     {
         return;

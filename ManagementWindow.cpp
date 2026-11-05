@@ -1,4 +1,4 @@
-#include "ManagementWindow.h"
+﻿#include "ManagementWindow.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -22,7 +22,7 @@
 
 ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
 {
-    setWindowTitle(QStringLiteral("多屏控制管理"));
+    setWindowTitle(QString::fromUtf8("多屏控制管理"));
     setObjectName(QStringLiteral("managementWindow"));
     // 无边框窗口：去掉系统标题栏与阴影边框，由窗口内部的标题区承担拖动与关闭职责
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
@@ -38,20 +38,20 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     }
 
     // ==================== 顶部标题栏 ====================
-    titleLabel = new QLabel(QStringLiteral("多屏控制管理"), this);
+    titleLabel = new QLabel(QString::fromUtf8("多屏控制管理"), this);
     titleLabel->setObjectName(QStringLiteral("managerTitle"));
     QLabel *subtitleLabel = new QLabel(
-        QStringLiteral("Alt+M 显示/隐藏 · 保存后立即热应用（调试模式、管理员权限需重启主程序）"), this);
+        QString::fromUtf8("Alt+M 显示/隐藏 · 保存后立即热应用（调试模式、管理员权限需重启主程序）"), this);
     subtitleLabel->setObjectName(QStringLiteral("hintLabel"));
-    dirtyLabel = new QLabel(QStringLiteral("未保存"), this);
+    dirtyLabel = new QLabel(QString::fromUtf8("未保存"), this);
     dirtyLabel->setObjectName(QStringLiteral("dirtyLabel"));
     dirtyLabel->setVisible(false);
 
-    saveButton = new QPushButton(QStringLiteral("保存并应用"), this);
+    saveButton = new QPushButton(QString::fromUtf8("保存并应用"), this);
     saveButton->setObjectName(QStringLiteral("primaryButton"));
     // 「重新加载」仅表示从磁盘重新读取配置文件刷新管理界面，不重启已运行的应用
-    reloadButton = new QPushButton(QStringLiteral("重新加载配置"), this);
-    closeButton = new QPushButton(QStringLiteral("关闭"), this);
+    reloadButton = new QPushButton(QString::fromUtf8("重新加载配置"), this);
+    closeButton = new QPushButton(QString::fromUtf8("关闭"), this);
 
     // 顶部按钮按文字长度设置最小宽度：样式表里的 15px 字体不会参与 sizeHint 计算，
     // 否则「重新加载配置」这类较长文案会被按钮边界裁掉最后一个字
@@ -60,7 +60,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     closeButton->setMinimumWidth(90);
 
     // 添加屏幕入口统一放在顶部操作区，与保存按钮相邻，屏幕卡片区不再重复提供
-    addScreenButton = new QPushButton(QStringLiteral("+ 添加屏幕"), this);
+    addScreenButton = new QPushButton(QString::fromUtf8("+ 添加屏幕"), this);
     addScreenButton->setMinimumWidth(130);
 
     QVBoxLayout *titleLayout = new QVBoxLayout();
@@ -79,14 +79,16 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     headerLayout->addWidget(closeButton);
 
     // ==================== 全局设置 ====================
-    showIndexCheck = new QCheckBox(QStringLiteral("显示屏幕序号"), this);
-    sortScreenCheck = new QCheckBox(QStringLiteral("按位置排序屏幕"), this);
-    debugModeCheck = new QCheckBox(QStringLiteral("调试模式（需重启）"), this);
-    runAsAdminCheck = new QCheckBox(QStringLiteral("以管理员运行（需重启）"), this);
+    showIndexCheck = new QCheckBox(QString::fromUtf8("显示屏幕序号"), this);
+    sortScreenCheck = new QCheckBox(QString::fromUtf8("按位置排序屏幕"), this);
+    debugModeCheck = new QCheckBox(QString::fromUtf8("调试模式（需重启）"), this);
+    runAsAdminCheck = new QCheckBox(QString::fromUtf8("以管理员运行（需重启）"), this);
     // 禁用 Win 键：勾选后由全局键盘钩子吞掉 Win 键，避免误触 Win+D/Win+R 打断全屏展示
-    disableWinKeyCheck = new QCheckBox(QStringLiteral("禁用 Win 键"), this);
+    disableWinKeyCheck = new QCheckBox(QString::fromUtf8("禁用 Win 键"), this);
     // 去掉嵌入应用边框：勾选后桌面应用不显示自身标题栏与边框，客户区完整铺满屏幕
-    stripAppBorderCheck = new QCheckBox(QStringLiteral("嵌入应用去掉边框（需重启）"), this);
+    stripAppBorderCheck = new QCheckBox(QString::fromUtf8("嵌入应用去掉边框（需重启）"), this);
+    // 禁用 GPU 加速：默认关闭以保留硬件加速，仅在个别机型/驱动出现网页渲染异常时开启
+    disableGpuAccelerationCheck = new QCheckBox(QString::fromUtf8("禁用 GPU 加速（需重启）"), this);
 
     QHBoxLayout *settingLayout = new QHBoxLayout();
     settingLayout->addWidget(showIndexCheck);
@@ -95,6 +97,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     settingLayout->addWidget(runAsAdminCheck);
     settingLayout->addWidget(disableWinKeyCheck);
     settingLayout->addWidget(stripAppBorderCheck);
+    settingLayout->addWidget(disableGpuAccelerationCheck);
     settingLayout->addStretch(1);
 
     // ==================== 两栏内容（软件清单 | 屏幕布局） ====================
@@ -103,7 +106,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     libraryGroup->setObjectName(QStringLiteral("panelGroup"));
     QVBoxLayout *libraryLayout = new QVBoxLayout(libraryGroup);
     libraryLayout->setContentsMargins(10, 10, 10, 10);
-    QLabel *libraryTitle = new QLabel(QStringLiteral("软件清单"), libraryGroup);
+    QLabel *libraryTitle = new QLabel(QString::fromUtf8("软件清单"), libraryGroup);
     libraryTitle->setObjectName(QStringLiteral("groupTitle"));
     libraryLayout->addWidget(libraryTitle);
     libraryLayout->addWidget(libraryPanel, 1);
@@ -112,7 +115,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     canvasGroup->setObjectName(QStringLiteral("panelGroup"));
     QVBoxLayout *canvasLayout = new QVBoxLayout(canvasGroup);
     canvasLayout->setContentsMargins(10, 10, 10, 10);
-    QLabel *canvasTitle = new QLabel(QStringLiteral("屏幕布局（拖拽软件到卡片，拖动手柄调整屏序）"), canvasGroup);
+    QLabel *canvasTitle = new QLabel(QString::fromUtf8("屏幕布局（拖拽软件到卡片，拖动手柄调整屏序）"), canvasGroup);
     canvasTitle->setObjectName(QStringLiteral("groupTitle"));
     layoutCanvas = new ScreenLayoutCanvas(canvasGroup);
     canvasLayout->addWidget(canvasTitle);
@@ -130,7 +133,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     statusLabel = new QLabel(this);
     statusLabel->setObjectName(QStringLiteral("statusLabel"));
     statusLabel->setWordWrap(true);
-    setStatusMessage(QStringLiteral("配置文件：%1").arg(ConfigStore::jsonPath(QApplication::applicationDirPath())));
+    setStatusMessage(QString::fromUtf8("配置文件：%1").arg(ConfigStore::jsonPath(QApplication::applicationDirPath())));
 
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(16, 14, 16, 12);
@@ -149,6 +152,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     connect(runAsAdminCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
     connect(disableWinKeyCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
     connect(stripAppBorderCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
+    connect(disableGpuAccelerationCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
 
     connect(libraryPanel, &SoftwareLibraryPanel::configChanged, this, [this]() {
         if (layoutCanvas != nullptr)
@@ -184,7 +188,7 @@ void ManagementWindow::setConfig(const MultiScreenConfig &config)
     // 回填全局开关，阻塞信号避免触发“未保存”标记
     const QList<QCheckBox *> checks = QList<QCheckBox *>() << showIndexCheck << sortScreenCheck << debugModeCheck
                                                            << runAsAdminCheck << disableWinKeyCheck
-                                                           << stripAppBorderCheck;
+                                                           << stripAppBorderCheck << disableGpuAccelerationCheck;
     for (int i = 0; i < checks.size(); i++)
     {
         checks[i]->blockSignals(true);
@@ -195,6 +199,7 @@ void ManagementWindow::setConfig(const MultiScreenConfig &config)
     runAsAdminCheck->setChecked(m_config.runAsAdministrator);
     disableWinKeyCheck->setChecked(m_config.disableWinKey);
     stripAppBorderCheck->setChecked(m_config.stripAppBorder);
+    disableGpuAccelerationCheck->setChecked(m_config.disableGpuAcceleration);
     for (int i = 0; i < checks.size(); i++)
     {
         checks[i]->blockSignals(false);
@@ -252,11 +257,11 @@ void ManagementWindow::notifyApplyResult(const QStringList &warnings)
 {
     if (warnings.isEmpty())
     {
-        setStatusMessage(QStringLiteral("已保存并热应用，配置：%1")
+        setStatusMessage(QString::fromUtf8("已保存并热应用，配置：%1")
                              .arg(ConfigStore::jsonPath(QApplication::applicationDirPath())));
         return;
     }
-    setStatusMessage(QStringLiteral("已保存并应用，但存在以下提示：\n%1").arg(warnings.join(QStringLiteral("\n"))),
+    setStatusMessage(QString::fromUtf8("已保存并应用，但存在以下提示：\n%1").arg(warnings.join(QStringLiteral("\n"))),
                      true);
 }
 
@@ -313,27 +318,27 @@ void ManagementWindow::onSave()
     QString error;
     if (!validate(&error))
     {
-        QMessageBox::warning(this, QStringLiteral("无法保存"), error);
+        QMessageBox::warning(this, QString::fromUtf8("无法保存"), error);
         return;
     }
     const MultiScreenConfig submitted = buildSubmitConfig();
     const QString directory = QApplication::applicationDirPath();
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    setStatusMessage(QStringLiteral("正在保存并应用，请稍候..."));
+    setStatusMessage(QString::fromUtf8("正在保存并应用，请稍候..."));
     QApplication::processEvents();
     const bool saved = ConfigStore::save(directory, submitted, &error);
     QApplication::restoreOverrideCursor();
     if (!saved)
     {
-        QMessageBox::critical(this, QStringLiteral("保存失败"), error);
-        setStatusMessage(QStringLiteral("保存失败：%1").arg(error), true);
+        QMessageBox::critical(this, QString::fromUtf8("保存失败"), error);
+        setStatusMessage(QString::fromUtf8("保存失败：%1").arg(error), true);
         return;
     }
 
     m_config = submitted;
     clearDirty();
-    setStatusMessage(QStringLiteral("已写入 %1，正在应用...").arg(ConfigStore::jsonPath(directory)));
+    setStatusMessage(QString::fromUtf8("已写入 %1，正在应用...").arg(ConfigStore::jsonPath(directory)));
     // 同步应用：主程序会在此处调用 DisplayRuntime::apply()，完成后回调 notifyApplyResult()
     emit applyRequested(submitted);
 }
@@ -342,8 +347,8 @@ void ManagementWindow::onReload()
 {
     if (m_dirty)
     {
-        if (QMessageBox::question(this, QStringLiteral("重新加载"),
-                                  QStringLiteral("存在未保存的修改，确定放弃并重新从磁盘加载？"),
+        if (QMessageBox::question(this, QString::fromUtf8("重新加载"),
+                                  QString::fromUtf8("存在未保存的修改，确定放弃并重新从磁盘加载？"),
                                   QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
         {
             return;
@@ -353,11 +358,11 @@ void ManagementWindow::onReload()
     QString error;
     if (!ConfigStore::load(QApplication::applicationDirPath(), &loaded, &error))
     {
-        QMessageBox::critical(this, QStringLiteral("加载失败"), error);
+        QMessageBox::critical(this, QString::fromUtf8("加载失败"), error);
         return;
     }
     setConfig(loaded);
-    setStatusMessage(QStringLiteral("已重新加载配置"));
+    setStatusMessage(QString::fromUtf8("已重新加载配置"));
 }
 
 void ManagementWindow::onSoftwareDropped(int screenRow, const QString &softwareId, int insertRow)
@@ -376,7 +381,7 @@ void ManagementWindow::onSoftwareDropped(int screenRow, const QString &softwareI
     const int boundRow = boundScreenRow(softwareId);
     if (boundRow >= 0)
     {
-        setStatusMessage(QStringLiteral("“%1”已绑定到 %2 号屏，请先移除后再绑定。")
+        setStatusMessage(QString::fromUtf8("“%1”已绑定到 %2 号屏，请先移除后再绑定。")
                              .arg(software->name)
                              .arg(boundRow + 1),
                          true);
@@ -400,7 +405,7 @@ void ManagementWindow::onSoftwareDropped(int screenRow, const QString &softwareI
     // 这里只更新标记而不重建列表，避免拖拽完成后选中项与滚动位置跳回顶部
     libraryPanel->refreshBindingMarks();
     markDirty();
-    setStatusMessage(QStringLiteral("已将“%1”绑定到 %2 号屏。").arg(software->name).arg(screenRow + 1));
+    setStatusMessage(QString::fromUtf8("已将“%1”绑定到 %2 号屏。").arg(software->name).arg(screenRow + 1));
 }
 
 void ManagementWindow::onGlobalSettingChanged()
@@ -411,6 +416,7 @@ void ManagementWindow::onGlobalSettingChanged()
     m_config.runAsAdministrator = runAsAdminCheck->isChecked();
     m_config.disableWinKey = disableWinKeyCheck->isChecked();
     m_config.stripAppBorder = stripAppBorderCheck->isChecked();
+    m_config.disableGpuAcceleration = disableGpuAccelerationCheck->isChecked();
     for (int i = 0; i < m_config.screenList.size(); i++)
     {
         m_config.screenList[i].showIndex = m_config.showIndex;
@@ -445,7 +451,7 @@ bool ManagementWindow::validate(QString *error) const
     {
         if (error != nullptr)
         {
-            *error = QStringLiteral("至少需要保留一块屏幕。");
+            *error = QString::fromUtf8("至少需要保留一块屏幕。");
         }
         return false;
     }
@@ -461,7 +467,7 @@ bool ManagementWindow::validate(QString *error) const
             {
                 if (error != nullptr)
                 {
-                    *error = QStringLiteral("%1号屏引用了不存在的软件，请重新分配后再保存。").arg(i + 1);
+                    *error = QString::fromUtf8("%1号屏引用了不存在的软件，请重新分配后再保存。").arg(i + 1);
                 }
                 return false;
             }
@@ -471,7 +477,7 @@ bool ManagementWindow::validate(QString *error) const
                 {
                     if (error != nullptr)
                     {
-                        *error = QStringLiteral("%1号屏重复分配了“%2”。").arg(i + 1).arg(software->name);
+                        *error = QString::fromUtf8("%1号屏重复分配了“%2”。").arg(i + 1).arg(software->name);
                     }
                     return false;
                 }
@@ -490,7 +496,7 @@ bool ManagementWindow::validate(QString *error) const
                     {
                         if (error != nullptr)
                         {
-                            *error = QStringLiteral("“%1”同时分配在 %2 号屏与 %3 号屏，同一软件只能绑定一块屏幕。")
+                            *error = QString::fromUtf8("“%1”同时分配在 %2 号屏与 %3 号屏，同一软件只能绑定一块屏幕。")
                                          .arg(software->name)
                                          .arg(i + 1)
                                          .arg(m + 1);

@@ -1,4 +1,4 @@
-#include "SoftwareLibraryPanel.h"
+﻿#include "SoftwareLibraryPanel.h"
 
 #include <QApplication>
 #include <QComboBox>
@@ -196,32 +196,32 @@ namespace
     {
         if (type == "web")
         {
-            return QStringLiteral("网页");
+            return QString::fromUtf8("网页");
         }
         if (type == "ppt")
         {
-            return QStringLiteral("演示文稿");
+            return QString::fromUtf8("演示文稿");
         }
-        return QStringLiteral("桌面应用");
+        return QString::fromUtf8("桌面应用");
     }
 }  // namespace
 
 SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<SoftwareItem> &all, QWidget *parent)
     : QDialog(parent), m_item(item), m_all(all), m_isNewItem(item.id.isEmpty())
 {
-    setWindowTitle(item.id.isEmpty() ? QStringLiteral("新增软件") : QStringLiteral("编辑软件"));
+    setWindowTitle(item.id.isEmpty() ? QString::fromUtf8("新增软件") : QString::fromUtf8("编辑软件"));
     setMinimumWidth(760);
 
     typeCombo = new QComboBox(this);
-    typeCombo->addItem(QStringLiteral("桌面应用"), QStringLiteral("desktop"));
-    typeCombo->addItem(QStringLiteral("网页"), QStringLiteral("web"));
-    typeCombo->addItem(QStringLiteral("演示文稿"), QStringLiteral("ppt"));
+    typeCombo->addItem(QString::fromUtf8("桌面应用"), QStringLiteral("desktop"));
+    typeCombo->addItem(QString::fromUtf8("网页"), QStringLiteral("web"));
+    typeCombo->addItem(QString::fromUtf8("演示文稿"), QStringLiteral("ppt"));
 
     nameEdit = new QLineEdit(this);
-    nameEdit->setPlaceholderText(QStringLiteral("例如：OA办公系统"));
+    nameEdit->setPlaceholderText(QString::fromUtf8("例如：OA办公系统"));
 
     pathEdit = new QLineEdit(this);
-    browseButton = new QPushButton(QStringLiteral("浏览..."), this);
+    browseButton = new QPushButton(QString::fromUtf8("浏览..."), this);
 
     QWidget *pathRow = new QWidget(this);
     QHBoxLayout *pathLayout = new QHBoxLayout(pathRow);
@@ -230,30 +230,30 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     pathLayout->addWidget(browseButton);
 
     windowTitleEdit = new QLineEdit(this);
-    windowTitleEdit->setPlaceholderText(QStringLiteral("桌面应用必填，用于匹配要嵌入的窗口"));
+    windowTitleEdit->setPlaceholderText(QString::fromUtf8("桌面应用必填，用于匹配要嵌入的窗口"));
     startupArgsEdit = new QLineEdit(this);
-    startupArgsEdit->setPlaceholderText(QStringLiteral("可选，例如：--kiosk"));
+    startupArgsEdit->setPlaceholderText(QString::fromUtf8("可选，例如：--kiosk"));
     remarkEdit = new QLineEdit(this);
-    remarkEdit->setPlaceholderText(QStringLiteral("可选，仅用于备注说明"));
+    remarkEdit->setPlaceholderText(QString::fromUtf8("可选，仅用于备注说明"));
 
     QFormLayout *form = new QFormLayout();
-    form->addRow(QStringLiteral("类型"), typeCombo);
-    form->addRow(QStringLiteral("名称"), nameEdit);
-    form->addRow(QStringLiteral("路径/地址"), pathRow);
-    form->addRow(QStringLiteral("窗口标题"), windowTitleEdit);
-    form->addRow(QStringLiteral("启动参数"), startupArgsEdit);
-    form->addRow(QStringLiteral("备注"), remarkEdit);
+    form->addRow(QString::fromUtf8("类型"), typeCombo);
+    form->addRow(QString::fromUtf8("名称"), nameEdit);
+    form->addRow(QString::fromUtf8("路径/地址"), pathRow);
+    form->addRow(QString::fromUtf8("窗口标题"), windowTitleEdit);
+    form->addRow(QString::fromUtf8("启动参数"), startupArgsEdit);
+    form->addRow(QString::fromUtf8("备注"), remarkEdit);
 
     // ==================== 预览区域 ====================
     previewLabel = new QLabel(this);
     previewLabel->setObjectName(QStringLiteral("previewImage"));
     previewLabel->setFixedSize(360, 200);
     previewLabel->setAlignment(Qt::AlignCenter);
-    previewLabel->setText(QStringLiteral("暂无预览"));
-    captureButton = new QPushButton(QStringLiteral("获取预览与窗口标题"), this);
+    previewLabel->setText(QString::fromUtf8("暂无预览"));
+    captureButton = new QPushButton(QString::fromUtf8("获取预览与窗口标题"), this);
     QLabel *previewHint = new QLabel(
-        QStringLiteral("演示文稿会导出第一页作为预览；桌面应用会启动一次并抓取第一个界面；网页会加载地址后截取"
-                       "页面首屏。窗口标题自动识别后仍可手工修改。"), this);
+        QString::fromUtf8("演示文稿会导出第一页作为预览；桌面应用会启动一次并抓取第一个界面；网页会加载地址后截取"
+                          "页面首屏。窗口标题自动识别后仍可手工修改。"), this);
     previewHint->setObjectName(QStringLiteral("hintLabel"));
     previewHint->setWordWrap(true);
 
@@ -268,8 +268,8 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
 
     QHBoxLayout *buttons = new QHBoxLayout();
     buttons->addStretch(1);
-    QPushButton *cancelButton = new QPushButton(QStringLiteral("取消"), this);
-    QPushButton *okButton = new QPushButton(QStringLiteral("确定"), this);
+    QPushButton *cancelButton = new QPushButton(QString::fromUtf8("取消"), this);
+    QPushButton *okButton = new QPushButton(QString::fromUtf8("确定"), this);
     okButton->setDefault(true);
     buttons->addWidget(cancelButton);
     buttons->addWidget(okButton);
@@ -333,27 +333,27 @@ void SoftwareEditDialog::onTypeChanged()
     }
     else if (type == "ppt")
     {
-        pathEdit->setPlaceholderText(QStringLiteral(".ppt / .pptx 文件完整路径"));
+        pathEdit->setPlaceholderText(QString::fromUtf8(".ppt / .pptx 文件完整路径"));
     }
     else
     {
-        pathEdit->setPlaceholderText(QStringLiteral(".exe 文件完整路径"));
+        pathEdit->setPlaceholderText(QString::fromUtf8(".exe 文件完整路径"));
     }
 }
 
 void SoftwareEditDialog::onBrowse()
 {
     const QString type = typeCombo->currentData().toString();
-    QString filter = QStringLiteral("所有文件 (*.*)");
+    QString filter = QString::fromUtf8("所有文件 (*.*)");
     if (type == "desktop")
     {
-        filter = QStringLiteral("可执行文件 (*.exe)");
+        filter = QString::fromUtf8("可执行文件 (*.exe)");
     }
     else if (type == "ppt")
     {
-        filter = QStringLiteral("演示文稿 (*.ppt *.pptx)");
+        filter = QString::fromUtf8("演示文稿 (*.ppt *.pptx)");
     }
-    const QString filePath = QFileDialog::getOpenFileName(this, QStringLiteral("选择文件"), pathEdit->text(), filter);
+    const QString filePath = QFileDialog::getOpenFileName(this, QString::fromUtf8("选择文件"), pathEdit->text(), filter);
     if (filePath.isEmpty())
     {
         return;
@@ -381,14 +381,14 @@ void SoftwareEditDialog::onCapture()
         // 网页类型不需要检查本地文件，只校验地址格式
         if (!ConfigStore::isWebPath(probe.path))
         {
-            QMessageBox::warning(this, QStringLiteral("生成预览"),
-                                 QStringLiteral("请先填写以 http:// 或 https:// 开头的网页地址。"));
+            QMessageBox::warning(this, QString::fromUtf8("生成预览"),
+                                 QString::fromUtf8("请先填写以 http:// 或 https:// 开头的网页地址。"));
             return;
         }
     }
     else if (probe.path.isEmpty() || !QFileInfo::exists(probe.path))
     {
-        QMessageBox::warning(this, QStringLiteral("生成预览"), QStringLiteral("请先选择有效的软件路径。"));
+        QMessageBox::warning(this, QString::fromUtf8("生成预览"), QString::fromUtf8("请先选择有效的软件路径。"));
         return;
     }
     if (probe.id.isEmpty())
@@ -403,9 +403,9 @@ void SoftwareEditDialog::onCapture()
     if (!ok)
     {
         QMessageBox::warning(
-            this, QStringLiteral("生成预览"),
-            QStringLiteral("未能抓取到预览画面。桌面应用请确认程序可正常启动（需要启动参数才能显示窗口的，"
-                           "可先填写启动参数）；网页请确认地址可正常访问。"));
+            this, QString::fromUtf8("生成预览"),
+            QString::fromUtf8("未能抓取到预览画面。桌面应用请确认程序可正常启动（需要启动参数才能显示窗口的，"
+                              "可先填写启动参数）；网页请确认地址可正常访问。"));
         return;
     }
 
@@ -428,7 +428,7 @@ void SoftwareEditDialog::loadPreviewImage()
     if (pixmap.isNull())
     {
         previewLabel->setPixmap(QPixmap());
-        previewLabel->setText(QStringLiteral("暂无预览"));
+        previewLabel->setText(QString::fromUtf8("暂无预览"));
         return;
     }
     previewLabel->setText(QString());
@@ -448,20 +448,20 @@ void SoftwareEditDialog::onAccept()
 
     if (name.isEmpty())
     {
-        QMessageBox::warning(this, QStringLiteral("校验失败"), QStringLiteral("名称不能为空。"));
+        QMessageBox::warning(this, QString::fromUtf8("校验失败"), QString::fromUtf8("名称不能为空。"));
         return;
     }
     if (path.isEmpty())
     {
-        QMessageBox::warning(this, QStringLiteral("校验失败"), QStringLiteral("路径/地址不能为空。"));
+        QMessageBox::warning(this, QString::fromUtf8("校验失败"), QString::fromUtf8("路径/地址不能为空。"));
         return;
     }
     if (type == "web")
     {
         if (!ConfigStore::isWebPath(path))
         {
-            QMessageBox::warning(this, QStringLiteral("校验失败"),
-                                 QStringLiteral("网页地址必须以 http:// 或 https:// 开头。"));
+            QMessageBox::warning(this, QString::fromUtf8("校验失败"),
+                                 QString::fromUtf8("网页地址必须以 http:// 或 https:// 开头。"));
             return;
         }
     }
@@ -469,14 +469,14 @@ void SoftwareEditDialog::onAccept()
     {
         if (!ConfigStore::isPptPath(path))
         {
-            QMessageBox::warning(this, QStringLiteral("校验失败"), QStringLiteral("请选择 .ppt 或 .pptx 文件。"));
+            QMessageBox::warning(this, QString::fromUtf8("校验失败"), QString::fromUtf8("请选择 .ppt 或 .pptx 文件。"));
             return;
         }
     }
     else if (windowTitle.isEmpty())
     {
-        QMessageBox::warning(this, QStringLiteral("校验失败"),
-                             QStringLiteral("桌面应用必须填写窗口标题，运行时依赖它匹配要嵌入的窗口。"));
+        QMessageBox::warning(this, QString::fromUtf8("校验失败"),
+                             QString::fromUtf8("桌面应用必须填写窗口标题，运行时依赖它匹配要嵌入的窗口。"));
         return;
     }
 
@@ -489,8 +489,8 @@ void SoftwareEditDialog::onAccept()
             {
                 continue;
             }
-            QMessageBox::warning(this, QStringLiteral("校验失败"),
-                                 QStringLiteral("该路径已存在于软件清单：%1").arg(m_all[i].name));
+            QMessageBox::warning(this, QString::fromUtf8("校验失败"),
+                                 QString::fromUtf8("该路径已存在于软件清单：%1").arg(m_all[i].name));
             return;
         }
     }
@@ -523,13 +523,13 @@ void SoftwareEditDialog::onAccept()
 SoftwareLibraryPanel::SoftwareLibraryPanel(QWidget *parent) : QWidget(parent)
 {
     searchEdit = new QLineEdit(this);
-    searchEdit->setPlaceholderText(QStringLiteral("搜索名称或路径"));
+    searchEdit->setPlaceholderText(QString::fromUtf8("搜索名称或路径"));
 
     typeCombo = new QComboBox(this);
-    typeCombo->addItem(QStringLiteral("全部类型"), QString());
-    typeCombo->addItem(QStringLiteral("桌面应用"), QStringLiteral("desktop"));
-    typeCombo->addItem(QStringLiteral("网页"), QStringLiteral("web"));
-    typeCombo->addItem(QStringLiteral("演示文稿"), QStringLiteral("ppt"));
+    typeCombo->addItem(QString::fromUtf8("全部类型"), QString());
+    typeCombo->addItem(QString::fromUtf8("桌面应用"), QStringLiteral("desktop"));
+    typeCombo->addItem(QString::fromUtf8("网页"), QStringLiteral("web"));
+    typeCombo->addItem(QString::fromUtf8("演示文稿"), QStringLiteral("ppt"));
 
     QHBoxLayout *filterLayout = new QHBoxLayout();
     filterLayout->addWidget(searchEdit, 1);
@@ -547,9 +547,9 @@ SoftwareLibraryPanel::SoftwareLibraryPanel(QWidget *parent) : QWidget(parent)
     // 自绘代理：名称/类型左对齐，已绑定屏幕标记右对齐并使用醒目色
     listWidget->setItemDelegate(new SoftwareItemDelegate(listWidget));
 
-    addButton = new QPushButton(QStringLiteral("新增"), this);
-    editButton = new QPushButton(QStringLiteral("编辑"), this);
-    removeButton = new QPushButton(QStringLiteral("删除"), this);
+    addButton = new QPushButton(QString::fromUtf8("新增"), this);
+    editButton = new QPushButton(QString::fromUtf8("编辑"), this);
+    removeButton = new QPushButton(QString::fromUtf8("删除"), this);
 
     QHBoxLayout *buttonLayout = new QHBoxLayout();
     buttonLayout->addWidget(addButton);
@@ -787,12 +787,12 @@ void SoftwareLibraryPanel::onRemove()
         return;
     }
     const QString softwareId = software->id;
-    QString message = QStringLiteral("确定删除软件“%1”？").arg(software->name);
+    QString message = QString::fromUtf8("确定删除软件“%1”？").arg(software->name);
     if (isReferenced(softwareId))
     {
-        message += QStringLiteral("\n该软件已被屏幕引用，删除后会同时从这些屏幕中移除。");
+        message += QString::fromUtf8("\n该软件已被屏幕引用，删除后会同时从这些屏幕中移除。");
     }
-    if (QMessageBox::question(this, QStringLiteral("删除软件"), message,
+    if (QMessageBox::question(this, QString::fromUtf8("删除软件"), message,
                               QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
     {
         return;
@@ -942,7 +942,7 @@ QString SoftwareLibraryPanel::boundScreenText(const QString &softwareId) const
     {
         return QString();
     }
-    return QStringLiteral("已绑定 %1号屏").arg(boundRows.join(QStringLiteral("、")));
+    return QString::fromUtf8("已绑定 %1号屏").arg(boundRows.join(QString::fromUtf8("、")));
 }
 
 SoftwareItem *SoftwareLibraryPanel::findSoftware(const QString &softwareId)

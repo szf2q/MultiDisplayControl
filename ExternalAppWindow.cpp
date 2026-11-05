@@ -988,7 +988,7 @@ void ExternalAppWindow::embedNativeWindow(AppConfig &app, ProcessInfo &process, 
         // Qt 程序需要额外按它自身缓存的外框尺寸补偿，定时器校正时要用同一套算法
         nativeAppFrameSizes.insert(host, appFrameSize);
     }
-    // 宿主控件销毁时立即摘掉映射：定时器每 200ms 遍历该映射，
+    // 宿主控件销毁时立即摘掉映射：定时器每 500ms 遍历该映射，
     // 若保留已释放的控件指针会直接崩溃（标签被替换或热更新移除时都会发生）
     connect(host, &QObject::destroyed, this, [this, host]() {
         nativeHostWindows.remove(host);
@@ -1080,8 +1080,10 @@ void ExternalAppWindow::startAndPlayPpt(AppConfig &app, int insertIndex)
     // 捕获配置副本而不是引用：配置可能在热更新过程中被修改或移除
     const AppConfig appCopy = app;
     connect(timer, &QTimer::timeout, this, [=]() { guardPptLoop(ppt, presentation, slideShowSettings, appCopy, insertIndex); });
-    // 轮询间隔取 50ms：黑屏停留时间最长为一次轮询周期，肉眼基本不可见
-    timer->start(50);
+    // 轮询间隔取 500ms：COM 查询（SlideShowWindows/Item/View）会阻塞界面线程，
+    // 过密的轮询（旧值 50ms）在多 PPT、低配机器上会造成全局卡顿；
+    // 黑屏最多多停留一个轮询周期，肉眼可接受
+    timer->start(500);
 
     if (!app.id.isEmpty())
     {
@@ -1218,7 +1220,7 @@ void ExternalAppWindow::guardPptLoop(QAxWidget *ppt, QAxObject *presentation, QA
     }
 
     // 放映到最后一页后若仍出现黑屏/白屏，说明循环放映没有被放映程序本身接管，
-    // 这里立刻恢复放映并跳回第一页，最多只闪一次轮询周期（50ms），肉眼基本不可见。
+    // 这里立刻恢复放映并跳回第一页，最多只闪一次轮询周期（500ms）
     // 说明：该守护用于无人值守的大屏循环播放，若有人按 B/W 主动切黑屏也会被还原。
     const int state = view->property("State").toInt();
     if (state == pptStateBlackScreen || state == pptStateWhiteScreen)
@@ -1269,7 +1271,9 @@ void ExternalAppWindow::startNativeHostFitTimer()
         return;
     }
     nativeHostFitTimer = new QTimer(this);
-    nativeHostFitTimer->setInterval(200);
+    // 该定时器每轮都要对每个嵌入窗口调用 GetWindowRect/AdjustWindowRectEx 并可能在漂移时
+    // 触发跨进程 MoveWindow，间隔过短会持续占用主线程；500ms 校正一次已足够隐藏用户拖拽
+    nativeHostFitTimer->setInterval(500);
     connect(nativeHostFitTimer, &QTimer::timeout, this, [this]() {
         for (QHash<QWidget *, WId>::const_iterator it = nativeHostWindows.constBegin();
              it != nativeHostWindows.constEnd(); ++it)
@@ -1577,15 +1581,38 @@ void ExternalAppWindow::layoutFloatingTabBar()
         tabsWidth = tabBar->tabRect(tabBar->count() - 1).right() + 1;
     }
     int width = qMax(defaultWidth, tabsWidth + 10);
-    // 右边缘保持默认布局位置不变，宽度增加时向左扩展，
-    // 避免向右扩展超出屏幕边界导致末尾标签再次被裁掉
-    const int right = screenRect.x() + config.tabOffsetX + defaultWidth;
+    // 右边缘位置：
+    // - tabOffsetX 为 0（新增屏幕的默认值）时贴屏幕右边缘，保证悬浮标签栏始终位于屏幕右上角；
+    // - tabOffsetX 大于 0 时沿用历史语义：距屏幕左边缘的偏移 + 默认 500 宽度。
+    const int screenRight = screenRect.right() + 1;
+    int right = 0;
+    if (config.tabOffsetX > 0)
+    {
+        right = screenRect.x() + config.tabOffsetX + defaultWidth;
+    }
+    else
+    {
+        // 20px 与历史布局在 1920 屏上的右边距保持一致（1400 + 500 = 1900）
+        right = screenRight - 20;
+    }
+    // 偏移值可能来自其它分辨率的屏幕或沿用了示例配置，算出的标签栏若落在屏幕左半区
+    // （例如 4K 屏上的 1400 只到屏幕中间偏左），按产品要求统一纠正为贴右上角
+    if (right < screenRect.x() + screenRect.width() / 2)
+    {
+        right = screenRight - 20;
+    }
+    if (right > screenRight)
+    {
+        right = screenRight;
+    }
+    // 右边缘固定，宽度增加时向左扩展，避免向右扩展超出屏幕边界导致末尾标签被裁掉
     int left = right - width;
     if (left < screenRect.x())
     {
-        // 标签总宽度超过整块屏幕可用宽度时只能占满屏幕，此时无法再完整显示所有标签
+        // 右侧空间不足以放下全部标签时从屏幕左边缘开始铺开，
+        // 宽度仍保持标签实际所需宽度（不能缩成 right-left，否则末尾标签又会被裁掉）
         left = screenRect.x();
-        width = right - left;
+        width = qMin(width, screenRect.width());
     }
     tabBarWidget->setGeometry(left, screenRect.y() + 10, width, barHeight);
     tabBar->setGeometry(0, 0, width, tabHeight);

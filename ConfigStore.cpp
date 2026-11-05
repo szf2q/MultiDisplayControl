@@ -1,4 +1,4 @@
-#include "ConfigStore.h"
+﻿﻿#include "ConfigStore.h"
 
 #include <QDir>
 #include <QFile>
@@ -121,7 +121,7 @@ bool ConfigStore::load(const QString &dir, MultiScreenConfig *config, QString *e
     {
         if (error != nullptr)
         {
-            *error = QStringLiteral("配置输出指针为空");
+            *error = QString::fromUtf8("配置输出指针为空");
         }
         return false;
     }
@@ -146,7 +146,7 @@ bool ConfigStore::load(const QString &dir, MultiScreenConfig *config, QString *e
     {
         if (error != nullptr)
         {
-            *error = jsonError.isEmpty() ? QStringLiteral("未找到配置文件 %1").arg(jsonFile) : jsonError;
+            *error = jsonError.isEmpty() ? QString::fromUtf8("未找到配置文件 %1").arg(jsonFile) : jsonError;
         }
         return false;
     }
@@ -157,7 +157,7 @@ bool ConfigStore::load(const QString &dir, MultiScreenConfig *config, QString *e
     {
         if (error != nullptr)
         {
-            *error = jsonError.isEmpty() ? iniError : jsonError + QStringLiteral("；") + iniError;
+            *error = jsonError.isEmpty() ? iniError : jsonError + QString::fromUtf8("；") + iniError;
         }
         return false;
     }
@@ -183,7 +183,7 @@ bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *confi
     {
         if (error != nullptr)
         {
-            *error = QStringLiteral("无法打开 %1").arg(filePath);
+            *error = QString::fromUtf8("无法打开 %1").arg(filePath);
         }
         return false;
     }
@@ -194,7 +194,7 @@ bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *confi
     {
         if (error != nullptr)
         {
-            *error = QStringLiteral("config.json 解析失败：%1").arg(parseError.errorString());
+            *error = QString::fromUtf8("config.json 解析失败：%1").arg(parseError.errorString());
         }
         return false;
     }
@@ -207,6 +207,8 @@ bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *confi
     config->runAsAdministrator = global.value(QStringLiteral("runAsAdministrator")).toBool(false);
     config->disableWinKey = global.value(QStringLiteral("disableWinKey")).toBool(false);
     config->stripAppBorder = global.value(QStringLiteral("stripAppBorder")).toBool(false);
+    // 缺省保留 GPU 加速：关闭后 CEF 走软件渲染，多屏/4K 场景下网页会明显卡顿
+    config->disableGpuAcceleration = global.value(QStringLiteral("disableGpuAcceleration")).toBool(false);
 
     config->softwareList.clear();
     const QJsonArray softwareArray = root.value(QStringLiteral("software")).toArray();
@@ -376,7 +378,7 @@ bool ConfigStore::loadFromIni(const QString &dir, MultiScreenConfig *config, QSt
     {
         if (error != nullptr)
         {
-            *error = QStringLiteral("config.ini 中没有有效的屏幕或应用配置");
+            *error = QString::fromUtf8("config.ini 中没有有效的屏幕或应用配置");
         }
         return false;
     }
@@ -438,6 +440,7 @@ bool ConfigStore::writeJson(const QString &filePath, const MultiScreenConfig &co
     global.insert(QStringLiteral("runAsAdministrator"), config.runAsAdministrator);
     global.insert(QStringLiteral("disableWinKey"), config.disableWinKey);
     global.insert(QStringLiteral("stripAppBorder"), config.stripAppBorder);
+    global.insert(QStringLiteral("disableGpuAcceleration"), config.disableGpuAcceleration);
     root.insert(QStringLiteral("global"), global);
 
     QJsonArray softwareArray;
@@ -459,7 +462,7 @@ bool ConfigStore::writeJson(const QString &filePath, const MultiScreenConfig &co
     {
         if (error != nullptr)
         {
-            *error = QStringLiteral("无法写入 %1").arg(filePath);
+            *error = QString::fromUtf8("无法写入 %1").arg(filePath);
         }
         return false;
     }
@@ -469,7 +472,7 @@ bool ConfigStore::writeJson(const QString &filePath, const MultiScreenConfig &co
         file.cancelWriting();
         if (error != nullptr)
         {
-            *error = QStringLiteral("写入 %1 失败").arg(filePath);
+            *error = QString::fromUtf8("写入 %1 失败").arg(filePath);
         }
         return false;
     }
@@ -477,7 +480,7 @@ bool ConfigStore::writeJson(const QString &filePath, const MultiScreenConfig &co
     {
         if (error != nullptr)
         {
-            *error = QStringLiteral("提交 %1 失败").arg(filePath);
+            *error = QString::fromUtf8("提交 %1 失败").arg(filePath);
         }
         return false;
     }
@@ -505,7 +508,7 @@ bool ConfigStore::save(const QString &dir, const MultiScreenConfig &config, QStr
     {
         if (error != nullptr)
         {
-            *error = QStringLiteral("无法创建配置目录 %1").arg(dir);
+            *error = QString::fromUtf8("无法创建配置目录 %1").arg(dir);
         }
         return false;
     }

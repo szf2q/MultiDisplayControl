@@ -1,4 +1,4 @@
-#include <QApplication>
+﻿#include <QApplication>
 
 #include <windows.h>
 #include <QDebug>
@@ -78,7 +78,9 @@ void closeUndesiredWindowTimer(QTimer &timer)
         processList.clear();
         *isTimerRunning = false;
     });
-    timer.start(500);
+    // 每轮都会枚举全部 chrome 进程与顶层窗口，间隔过短会占用主线程；
+    // 关闭翻译/更新弹窗对时效性要求不高，1 秒一轮足够
+    timer.start(1000);
 }
 
 void switchScreen(QMap<QString, ExternalAppWindow *> &winList, const int &screenIndex, const QString &keyMessage)
@@ -403,8 +405,8 @@ int main(int argc, char *argv[])
         if (!guardCreated)
         {
             qDebug() << "another instance is running, error = " << singleInstanceGuard.errorString();
-            QMessageBox::warning(nullptr, QStringLiteral("多屏控制"),
-                                 QStringLiteral("程序已在运行，请勿重复启动。"));
+            QMessageBox::warning(nullptr, QString::fromUtf8("多屏控制"),
+                                 QString::fromUtf8("程序已在运行，请勿重复启动。"));
             return 0;
         }
 
@@ -419,8 +421,13 @@ int main(int argc, char *argv[])
         QCefConfig cefConfig;
         cefConfig.setLogLevel(QCefConfig::LOGSEVERITY_DEFAULT);
         cefConfig.setCachePath(QDir::toNativeSeparators(cefCachePath));
-        // 关闭 GPU 加速，规避部分机型/驱动下的渲染异常；如现场需要硬件加速请删除该开关
-        cefConfig.addCommandLineSwitch("disable-gpu");
+        // 默认启用 GPU 加速：多屏/4K 分辨率下关闭 GPU 会让 CEF 退化为软件渲染，
+        // 多个网页同时展示时页面明显卡顿。个别机型/驱动存在黑屏等渲染异常时，
+        // 可在管理界面勾选「禁用 GPU 加速」后重启主程序。
+        if (config.disableGpuAcceleration)
+        {
+            cefConfig.addCommandLineSwitch("disable-gpu");
+        }
         // 关闭离屏渲染（OSR），改用窗口模式：
         //   OSR 模式下键盘、鼠标与输入法事件都需要由 Qt 转发给 CEF，实测该链路下网页无法
         //   获得键盘输入，且在输入法组合（ImeSetComposition）时会导致 libcef 触发断点崩溃；
