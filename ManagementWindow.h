@@ -16,7 +16,7 @@ class SoftwareLibraryPanel;
 /**
  * @brief 多屏控制管理主窗口
  *
- * 通过 Alt+M 全屏显示/隐藏，负责：
+ * 通过 Alt+M 显示/隐藏，负责：
  *  - 汇总软件清单与屏幕布局两个面板的编辑结果；
  *  - 校验并保存配置（仅写入 config.json）；
  *  - 向主程序请求增量热应用，并展示应用结果与警告。
@@ -44,7 +44,10 @@ class ManagementWindow : public QWidget
     void toggle();
 
     /**
-     * @brief 全屏显示管理窗口并置顶
+     * @brief 以固定尺寸居中显示管理窗口并置顶
+     *
+     * 窗口尺寸为 1200×760（原设计 1500×950 缩小五分之一），
+     * 显示在鼠标所在屏幕的中心位置，便于多屏环境下就地管理。
      */
     void showManager();
 

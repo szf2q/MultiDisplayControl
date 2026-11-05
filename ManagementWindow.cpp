@@ -26,8 +26,10 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     setObjectName(QStringLiteral("managementWindow"));
     // 无边框窗口：去掉系统标题栏与阴影边框，由窗口内部的标题区承担拖动与关闭职责
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    resize(1500, 950);
-    setMinimumSize(1024, 700);
+    // 管理界面尺寸：原设计 1500×950，缩小五分之一（80%）后为 1200×760
+    resize(1200, 760);
+    // 最小尺寸也按相同比例缩小：原 1024×700 → 约 820×560
+    setMinimumSize(820, 560);
 
     // 只对管理窗口自身应用样式，避免影响全屏展示窗口
     QFile styleFile(QStringLiteral(":/qss/manager.css"));
@@ -126,7 +128,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     splitter->addWidget(canvasGroup);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
-    splitter->setSizes(QList<int>() << 420 << 1180);
+    splitter->setSizes(QList<int>() << 336 << 944);
     splitter->setChildrenCollapsible(false);
 
     // ==================== 状态栏 ====================
@@ -233,7 +235,7 @@ void ManagementWindow::toggle()
 
 void ManagementWindow::showManager()
 {
-    // 管理界面固定全屏显示（无边框、置顶），并落在鼠标所在的屏幕上，便于多屏环境下就地管理
+    // 管理界面以固定尺寸（1200×760）显示，并落在鼠标所在屏幕的中心位置，便于多屏环境下就地管理
     QScreen *targetScreen = QGuiApplication::screenAt(QCursor::pos());
     if (targetScreen == nullptr)
     {
@@ -241,13 +243,18 @@ void ManagementWindow::showManager()
     }
     if (targetScreen != nullptr)
     {
-        setGeometry(targetScreen->geometry());
+        const QRect screenGeo = targetScreen->geometry();
+        const QSize windowSize = size();
+        // 计算居中位置：屏幕中心减去窗口尺寸的一半
+        const int x = screenGeo.center().x() - windowSize.width() / 2;
+        const int y = screenGeo.center().y() - windowSize.height() / 2;
+        move(x, y);
     }
     if (isMinimized())
     {
         showNormal();
     }
-    showFullScreen();
+    showNormal();
     raise();
     activateWindow();
 }
