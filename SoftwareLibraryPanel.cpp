@@ -1,4 +1,4 @@
-﻿#include "SoftwareLibraryPanel.h"
+#include "SoftwareLibraryPanel.h"
 
 #include <QApplication>
 #include <QComboBox>

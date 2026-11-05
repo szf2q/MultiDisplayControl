@@ -1,4 +1,4 @@
-﻿#include "SoftwareCapture.h"
+#include "SoftwareCapture.h"
 
 #include "ProcessFactory.h"
 
