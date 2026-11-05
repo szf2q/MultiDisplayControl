@@ -371,6 +371,17 @@ class ScreenLayoutCanvas : public QWidget
     void renumberScreens();
 
     /**
+     * @brief 确保主屏排第一位（1 号屏）
+     *
+     * 遍历 screenList，将标记为 primaryScreen 的屏幕移动到第 0 位，
+     * 保证界面展示与运行时 Alt+1 都对应主屏。其它屏幕保持原有相对顺序。
+     * 没有主屏标记时不做调整。
+     *
+     * @return true 表示发生了重排，false 表示顺序未变
+     */
+    bool ensurePrimaryFirst();
+
+    /**
      * @brief 找到尚未被任何屏幕配置占用的物理屏
      * @return 物理屏名称，找不到返回空字符串
      */

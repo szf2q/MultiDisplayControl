@@ -150,6 +150,17 @@ class ConfigStore
      * @return 命中返回条目指针，否则返回 nullptr
      */
     static const SoftwareItem *findSoftware(const MultiScreenConfig &config, const QString &id);
+
+    /**
+     * @brief 确保主屏排到第一位（1 号屏）
+     *
+     * 遍历 screenList，将标记为 primaryScreen 的屏幕移到第 0 位，
+     * 其它屏幕保持原有相对顺序。列表中没有主屏时不调整。
+     *
+     * @param config 待归一化的配置
+     * @return true 表示发生了重排
+     */
+    static bool ensurePrimaryFirst(MultiScreenConfig *config);
 };
 
 #endif  // CONFIGSTORE_H

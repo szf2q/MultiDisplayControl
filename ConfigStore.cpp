@@ -1,4 +1,4 @@
-﻿﻿#include "ConfigStore.h"
+#include "ConfigStore.h"
 
 #include <QDir>
 #include <QFile>
@@ -69,6 +69,34 @@ const SoftwareItem *ConfigStore::findSoftware(const MultiScreenConfig &config, c
         }
     }
     return nullptr;
+}
+
+bool ConfigStore::ensurePrimaryFirst(MultiScreenConfig *config)
+{
+    if (config == nullptr || config->screenList.isEmpty())
+    {
+        return false;
+    }
+    // 已经在第一位则无需调整
+    if (config->screenList.first().primaryScreen)
+    {
+        return false;
+    }
+    for (int i = 1; i < config->screenList.size(); i++)
+    {
+        if (config->screenList[i].primaryScreen)
+        {
+            config->screenList.move(i, 0);
+            // 重新同步 screenIndex，确保编号与顺序一致
+            for (int j = 0; j < config->screenList.size(); j++)
+            {
+                config->screenList[j].screenIndex = j + 1;
+            }
+            config->count = config->screenList.size();
+            return true;
+        }
+    }
+    return false;
 }
 
 void ConfigStore::rebuildRuntimeApps(MultiScreenConfig *config)
@@ -288,6 +316,9 @@ bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *confi
         config->screenList.append(screen);
     }
 
+    // 主屏始终为 1 号屏：加载后把主屏移到列表第一位，保证界面与运行时编号一致
+    ensurePrimaryFirst(config);
+
     rebuildRuntimeApps(config);
     return true;
 }
@@ -371,6 +402,9 @@ bool ConfigStore::loadFromIni(const QString &dir, MultiScreenConfig *config, QSt
             config->screenList.append(screen);
         }
     }
+
+    // 主屏始终为 1 号屏：导入旧配置后也做归一化
+    ensurePrimaryFirst(config);
 
     // 所有屏幕已追加完毕，统一生成运行时应用列表
     rebuildRuntimeApps(config);
@@ -514,7 +548,8 @@ bool ConfigStore::save(const QString &dir, const MultiScreenConfig &config, QStr
     }
 
     MultiScreenConfig normalized = config;
-    // 保存前按软件清单重新生成运行时数据，保证 appCount 与 assignments 一致
+    // 保存前归一化：主屏始终为 1 号屏，并按软件清单重新生成运行时数据
+    ensurePrimaryFirst(&normalized);
     rebuildRuntimeApps(&normalized);
 
     const QString jsonFile = jsonPath(dir);

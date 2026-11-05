@@ -1,4 +1,4 @@
-﻿﻿#include "ScreenLayoutCanvas.h"
+#include "ScreenLayoutCanvas.h"
 
 #include <QApplication>
 #include <QDebug>
@@ -280,13 +280,38 @@ void ScreenCard::setScreen(int row, const ScreenConfig &screen, const MultiScree
     nameEdit->setText(screen.screenTitle);
     nameEdit->blockSignals(false);
 
+    // 主屏固定为 1 号屏：禁用拖拽手柄与移除按钮，并在序号徽标上标注「主」
+    const bool isPrimary = screen.primaryScreen;
+    if (isPrimary)
+    {
+        indexLabel->setText(QString::fromUtf8("1(主)"));
+        dragHandle->setEnabled(false);
+        dragHandle->setToolTip(QString::fromUtf8("主屏固定为 1 号屏，不可调整顺序"));
+        dragHandle->setCursor(Qt::ArrowCursor);
+        dragHandle->setObjectName(QStringLiteral("screenDragHandleDisabled"));
+        removeButton->setEnabled(false);
+        removeButton->setToolTip(QString::fromUtf8("主屏不可移除"));
+    }
+    else
+    {
+        dragHandle->setEnabled(true);
+        dragHandle->setToolTip(QString::fromUtf8("按住此处拖到另一张卡片可调整屏幕序号"));
+        dragHandle->setCursor(Qt::SizeAllCursor);
+        dragHandle->setObjectName(QStringLiteral("screenDragHandle"));
+        removeButton->setEnabled(true);
+        removeButton->setToolTip(QString());
+    }
+    // 强制刷新样式（objectName 改变后 QSS 选择器需要重新匹配）
+    dragHandle->style()->unpolish(dragHandle);
+    dragHandle->style()->polish(dragHandle);
+
     if (screen.displayName.isEmpty())
     {
         displayLabel->setText(QString::fromUtf8("未绑定物理屏，保存后按序号回退匹配"));
     }
     else
     {
-        const QString primaryFlag = screen.primaryScreen ? QString::fromUtf8(" · 主屏") : QString();
+        const QString primaryFlag = isPrimary ? QString::fromUtf8(" · 主屏") : QString();
         displayLabel->setText(QString("%1 · %2×%3%4")
                                   .arg(screen.displayName)
                                   .arg(screen.geometry.width())
@@ -347,7 +372,9 @@ QStringList ScreenCard::assignmentIds() const
 void ScreenCard::mousePressEvent(QMouseEvent *event)
 {
     emit selected(m_row);
-    if (event->button() == Qt::LeftButton && dragHandle != nullptr && dragHandle->geometry().contains(event->pos()))
+    // 主屏禁用拖拽，只有启用状态下的手柄才允许发起屏幕卡片拖拽
+    if (event->button() == Qt::LeftButton && dragHandle != nullptr && dragHandle->isEnabled() &&
+        dragHandle->geometry().contains(event->pos()))
     {
         // 从拖拽手柄发起屏幕卡片拖拽，数据为当前行号，落在其它卡片上即调整序号
         QMimeData *mimeData = new QMimeData();
@@ -364,6 +391,12 @@ void ScreenCard::dragEnterEvent(QDragEnterEvent *event)
 {
     if (event->mimeData()->hasFormat(MDC_SCREEN_MIME))
     {
+        // 主屏卡片不接受其它屏幕的拖拽（主屏固定为 1 号屏）
+        if (dragHandle != nullptr && !dragHandle->isEnabled())
+        {
+            event->ignore();
+            return;
+        }
         event->acceptProposedAction();
         return;
     }
@@ -430,6 +463,12 @@ void ScreenLayoutCanvas::setConfig(MultiScreenConfig *config)
 {
     m_config = config;
     m_selectedRow = -1;
+    // 加载配置后先把主屏移到第一位，保证界面展示与 Alt+1 一致
+    if (m_config != nullptr)
+    {
+        ensurePrimaryFirst();
+        renumberScreens();
+    }
     refresh();
 }
 
@@ -587,10 +626,20 @@ void ScreenLayoutCanvas::onAddScreen()
     screen.sortScreen = m_config->sortScreen;
     screen.debugMode = m_config->debugMode;
     screen.tabOffsetX = 0;
-    m_config->screenList.append(screen);
+    // 主屏加到第一位（固定为 1 号屏），其它屏追加到末尾
+    if (screen.primaryScreen)
+    {
+        m_config->screenList.prepend(screen);
+    }
+    else
+    {
+        m_config->screenList.append(screen);
+    }
     renumberScreens();
     refresh();
-    onSelectScreen(m_config->screenList.size() - 1);
+    // 选中刚添加的那块屏
+    const int newRow = screen.primaryScreen ? 0 : m_config->screenList.size() - 1;
+    onSelectScreen(newRow);
     emit configChanged();
 }
 
@@ -608,6 +657,13 @@ void ScreenLayoutCanvas::onRemoveScreen()
     if (m_config->screenList.size() <= 1)
     {
         QMessageBox::information(this, QString::fromUtf8("删除屏幕"), QString::fromUtf8("至少需要保留一块屏幕。"));
+        return;
+    }
+    // 主屏固定不可移除
+    if (m_config->screenList[m_selectedRow].primaryScreen)
+    {
+        QMessageBox::information(this, QString::fromUtf8("删除屏幕"),
+                                 QString::fromUtf8("主屏固定为 1 号屏，不可移除。"));
         return;
     }
     const int row = m_selectedRow;
@@ -652,6 +708,15 @@ void ScreenLayoutCanvas::onScreenMoved(int fromRow, int toRow)
     {
         return;
     }
+    // 主屏固定为 1 号屏：不允许被拖走，也不允许其它屏幕插到它前面
+    if (m_config->screenList[fromRow].primaryScreen)
+    {
+        return;
+    }
+    if (m_config->screenList[toRow].primaryScreen)
+    {
+        return;
+    }
     m_config->screenList.move(fromRow, toRow);
     renumberScreens();
     refresh();
@@ -691,6 +756,29 @@ void ScreenLayoutCanvas::renumberScreens()
         m_config->screenList[i].screenIndex = i + 1;
     }
     m_config->count = m_config->screenList.size();
+}
+
+bool ScreenLayoutCanvas::ensurePrimaryFirst()
+{
+    if (m_config == nullptr || m_config->screenList.isEmpty())
+    {
+        return false;
+    }
+    // 已经在第一位就不用动
+    if (m_config->screenList.first().primaryScreen)
+    {
+        return false;
+    }
+    // 找到主屏的位置并移到最前面
+    for (int i = 1; i < m_config->screenList.size(); i++)
+    {
+        if (m_config->screenList[i].primaryScreen)
+        {
+            m_config->screenList.move(i, 0);
+            return true;
+        }
+    }
+    return false;
 }
 
 QString ScreenLayoutCanvas::findFreeScreenName() const
