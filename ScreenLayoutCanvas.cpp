@@ -101,9 +101,9 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
         const bool selected = (!m_selected.isEmpty() && displayName == m_selected);
         const bool primary = (screens[i] == QGuiApplication::primaryScreen());
 
-        // 选中态：红色边框 + 深红背景；未选中：深蓝边框 + 深蓝背景
-        const QColor fillColor = selected ? QColor(80, 20, 40) : QColor(20, 46, 78);
-        const QColor borderColor = selected ? QColor(255, 77, 106) : QColor(48, 92, 140);
+        // 选中态：青色边框 + 青色背景（与下方屏幕卡片选中色一致，红色仅用于实际大屏高亮）
+        const QColor fillColor = selected ? QColor(18, 82, 130) : QColor(20, 46, 78);
+        const QColor borderColor = selected ? QColor(17, 192, 254) : QColor(48, 92, 140);
         const qreal borderWidth = selected ? 3.0 : 1.5;
         painter.setBrush(fillColor);
         painter.setPen(QPen(borderColor, borderWidth));
@@ -127,7 +127,7 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
             const qreal badgeW = 32;
             const qreal badgeH = 22;
             const QRectF badgeRect(targetRect.left() + 8, targetRect.top() + 8, badgeW, badgeH);
-            painter.setBrush(selected ? QColor(255, 77, 106) : QColor(48, 92, 140));
+            painter.setBrush(selected ? QColor(17, 192, 254) : QColor(48, 92, 140));
             painter.setPen(Qt::NoPen);
             painter.drawRoundedRect(badgeRect, 4, 4);
             QFont badgeFont = painter.font();
