@@ -16,8 +16,8 @@ class QSpinBox;
 /**
  * @brief 物理屏布局示意图
  *
- * 按所有物理屏的真实几何等比缩放绘制矩形，并标注名称、分辨率与主屏标记；
- * 选中某张屏序卡片时高亮其绑定的物理屏，帮助用户确认映射关系。
+ * 按所有物理屏的真实几何等比缩放绘制矩形，并标注序号、名称、分辨率与主屏标记；
+ * 点击某块物理屏可选中对应屏幕配置，选中态用红色边框标识，帮助用户快速定位。
  */
 class PhysicalScreenMap : public QWidget
 {
@@ -31,15 +31,28 @@ class PhysicalScreenMap : public QWidget
     explicit PhysicalScreenMap(QWidget *parent = nullptr);
 
     /**
-     * @brief 设置要高亮的物理屏名称
-     * @param displayName QScreen::name()
+     * @brief 绑定配置对象，用于读取每块物理屏对应的序号、主屏标记等
+     * @param config 全量配置，可为 nullptr（仅显示物理屏，不显示序号）
      */
-    void setHighlightedScreen(const QString &displayName);
+    void setConfig(MultiScreenConfig *config);
+
+    /**
+     * @brief 设置选中的物理屏名称（红色边框）
+     * @param displayName QScreen::name()，空字符串表示无选中
+     */
+    void setSelectedScreen(const QString &displayName);
 
     /**
      * @brief 按当前连接的物理屏刷新示意图
      */
     void refresh();
+
+  signals:
+    /**
+     * @brief 点击了某块物理屏
+     * @param displayName 物理屏名称（QScreen::name()）
+     */
+    void screenClicked(const QString &displayName);
 
   protected:
     /**
@@ -48,9 +61,24 @@ class PhysicalScreenMap : public QWidget
      */
     void paintEvent(QPaintEvent *event) override;
 
+    /**
+     * @brief 鼠标按下：命中物理屏矩形时发出 screenClicked 信号
+     * @param event 鼠标事件
+     */
+    void mousePressEvent(QMouseEvent *event) override;
+
   private:
-    /** 要高亮的物理屏名称 */
-    QString m_highlighted;
+    /**
+     * @brief 根据鼠标位置计算命中的物理屏下标
+     * @param pos 鼠标坐标（相对本控件）
+     * @return 物理屏在 QGuiApplication::screens() 中的下标，未命中返回 -1
+     */
+    int hitTest(const QPoint &pos) const;
+
+    /** 配置引用，用于读取屏幕序号与主屏标记，可为 nullptr */
+    MultiScreenConfig *m_config = nullptr;
+    /** 选中的物理屏名称（红色边框） */
+    QString m_selected;
 };
 
 /**
@@ -342,6 +370,12 @@ class ScreenLayoutCanvas : public QWidget
      * @param row 行号
      */
     void onSelectScreen(int row);
+
+    /**
+     * @brief 物理屏示意图上点击了某块物理屏，同步选中对应屏幕卡片
+     * @param displayName 物理屏名称
+     */
+    void onScreenMapClicked(const QString &displayName);
 
     /**
      * @brief 交换/移动屏幕顺序

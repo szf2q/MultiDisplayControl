@@ -35,11 +35,18 @@ PhysicalScreenMap::PhysicalScreenMap(QWidget *parent) : QWidget(parent)
 {
     setMinimumHeight(150);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    setCursor(Qt::PointingHandCursor);
 }
 
-void PhysicalScreenMap::setHighlightedScreen(const QString &displayName)
+void PhysicalScreenMap::setConfig(MultiScreenConfig *config)
 {
-    m_highlighted = displayName;
+    m_config = config;
+    update();
+}
+
+void PhysicalScreenMap::setSelectedScreen(const QString &displayName)
+{
+    m_selected = displayName;
     update();
 }
 
@@ -90,26 +97,120 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
         const QRectF targetRect(offsetX + (geometry.x() - bounding.x()) * scale,
                                 offsetY + (geometry.y() - bounding.y()) * scale, geometry.width() * scale,
                                 geometry.height() * scale);
-        const bool highlighted = (!m_highlighted.isEmpty() && screens[i]->name() == m_highlighted);
+        const QString &displayName = screens[i]->name();
+        const bool selected = (!m_selected.isEmpty() && displayName == m_selected);
         const bool primary = (screens[i] == QGuiApplication::primaryScreen());
 
-        painter.setBrush(highlighted ? QColor(18, 82, 130) : QColor(20, 46, 78));
-        painter.setPen(QPen(highlighted ? QColor(17, 192, 254) : QColor(48, 92, 140), highlighted ? 3 : 1.5));
+        // 选中态：红色边框 + 深红背景；未选中：深蓝边框 + 深蓝背景
+        const QColor fillColor = selected ? QColor(80, 20, 40) : QColor(20, 46, 78);
+        const QColor borderColor = selected ? QColor(255, 77, 106) : QColor(48, 92, 140);
+        const qreal borderWidth = selected ? 3.0 : 1.5;
+        painter.setBrush(fillColor);
+        painter.setPen(QPen(borderColor, borderWidth));
         painter.drawRoundedRect(targetRect.adjusted(1, 1, -1, -1), 8, 8);
+
+        // 左上角序号徽标：从配置中查找该物理屏对应的屏幕序号
+        int screenIndex = 0;
+        if (m_config != nullptr)
+        {
+            for (int j = 0; j < m_config->screenList.size(); j++)
+            {
+                if (m_config->screenList[j].displayName == displayName)
+                {
+                    screenIndex = m_config->screenList[j].screenIndex;
+                    break;
+                }
+            }
+        }
+        if (screenIndex > 0)
+        {
+            const qreal badgeW = 32;
+            const qreal badgeH = 22;
+            const QRectF badgeRect(targetRect.left() + 8, targetRect.top() + 8, badgeW, badgeH);
+            painter.setBrush(selected ? QColor(255, 77, 106) : QColor(48, 92, 140));
+            painter.setPen(Qt::NoPen);
+            painter.drawRoundedRect(badgeRect, 4, 4);
+            QFont badgeFont = painter.font();
+            badgeFont.setFamily(QString::fromUtf8("微软雅黑"));
+            badgeFont.setPixelSize(13);
+            badgeFont.setBold(true);
+            painter.setFont(badgeFont);
+            painter.setPen(QColor(255, 255, 255));
+            painter.drawText(badgeRect, Qt::AlignCenter, QString::number(screenIndex));
+        }
 
         QFont font = painter.font();
         font.setFamily(QString::fromUtf8("微软雅黑"));
         font.setPixelSize(13);
-        font.setBold(highlighted || primary);
+        font.setBold(selected || primary);
         painter.setFont(font);
-        painter.setPen(highlighted || primary ? QColor(220, 240, 255) : QColor(170, 195, 220));
+        painter.setPen(selected || primary ? QColor(220, 240, 255) : QColor(170, 195, 220));
         const QString text = QString("%1%2\n%3×%4")
-                                 .arg(screens[i]->name())
+                                 .arg(displayName)
                                  .arg(primary ? QString::fromUtf8("（主屏）") : QString())
                                  .arg(geometry.width())
                                  .arg(geometry.height());
         painter.drawText(targetRect, Qt::AlignCenter, text);
     }
+}
+
+void PhysicalScreenMap::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton)
+    {
+        const int idx = hitTest(event->pos());
+        if (idx >= 0)
+        {
+            const QList<QScreen *> screens = QGuiApplication::screens();
+            if (idx < screens.size())
+            {
+                emit screenClicked(screens[idx]->name());
+                return;
+            }
+        }
+    }
+    QWidget::mousePressEvent(event);
+}
+
+int PhysicalScreenMap::hitTest(const QPoint &pos) const
+{
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    if (screens.isEmpty())
+    {
+        return -1;
+    }
+    QRectF bounding;
+    for (int i = 0; i < screens.size(); i++)
+    {
+        bounding = bounding.united(QRectF(screens[i]->geometry()));
+    }
+    if (bounding.width() <= 0 || bounding.height() <= 0)
+    {
+        return -1;
+    }
+    const double margin = 14;
+    const double availableWidth = width() - margin * 2;
+    const double availableHeight = height() - margin * 2;
+    if (availableWidth <= 0 || availableHeight <= 0)
+    {
+        return -1;
+    }
+    const double scale = qMin(availableWidth / bounding.width(), availableHeight / bounding.height());
+    const double offsetX = margin + (availableWidth - bounding.width() * scale) / 2.0;
+    const double offsetY = margin + (availableHeight - bounding.height() * scale) / 2.0;
+
+    for (int i = 0; i < screens.size(); i++)
+    {
+        const QRect geometry = screens[i]->geometry();
+        const QRectF targetRect(offsetX + (geometry.x() - bounding.x()) * scale,
+                                offsetY + (geometry.y() - bounding.y()) * scale, geometry.width() * scale,
+                                geometry.height() * scale);
+        if (targetRect.contains(pos))
+        {
+            return i;
+        }
+    }
+    return -1;
 }
 
 AppAssignmentList::AppAssignmentList(QWidget *parent) : QListWidget(parent)
@@ -422,6 +523,9 @@ void ScreenCard::dropEvent(QDropEvent *event)
 ScreenLayoutCanvas::ScreenLayoutCanvas(QWidget *parent) : QWidget(parent)
 {
     screenMap = new PhysicalScreenMap(this);
+    // 点击物理屏示意图上的屏幕，同步选中下方对应的屏幕卡片
+    connect(screenMap, &PhysicalScreenMap::screenClicked, this,
+            &ScreenLayoutCanvas::onScreenMapClicked);
 
     cardContainer = new QWidget();
     QHBoxLayout *cardLayout = new QHBoxLayout(cardContainer);
@@ -463,6 +567,10 @@ void ScreenLayoutCanvas::setConfig(MultiScreenConfig *config)
 {
     m_config = config;
     m_selectedRow = -1;
+    if (screenMap != nullptr)
+    {
+        screenMap->setConfig(m_config);
+    }
     // 加载配置后先把主屏移到第一位，保证界面展示与 Alt+1 一致
     if (m_config != nullptr)
     {
@@ -574,7 +682,7 @@ void ScreenLayoutCanvas::refresh()
         m_selectedRow = -1;
         if (screenMap != nullptr)
         {
-            screenMap->setHighlightedScreen(QString());
+            screenMap->setSelectedScreen(QString());
         }
     }
     if (screenMap != nullptr)
@@ -696,9 +804,26 @@ void ScreenLayoutCanvas::onSelectScreen(int row)
     }
     if (screenMap != nullptr)
     {
-        screenMap->setHighlightedScreen(m_config->screenList[row].displayName);
+        screenMap->setSelectedScreen(m_config->screenList[row].displayName);
     }
     emit screenSelected(row);
+}
+
+void ScreenLayoutCanvas::onScreenMapClicked(const QString &displayName)
+{
+    if (m_config == nullptr || displayName.isEmpty())
+    {
+        return;
+    }
+    // 找到与该物理屏绑定的屏幕配置，选中对应的卡片
+    for (int i = 0; i < m_config->screenList.size(); i++)
+    {
+        if (m_config->screenList[i].displayName == displayName)
+        {
+            onSelectScreen(i);
+            return;
+        }
+    }
 }
 
 void ScreenLayoutCanvas::onScreenMoved(int fromRow, int toRow)
