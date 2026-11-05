@@ -2,8 +2,10 @@
 
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QMoveEvent>
 #include <QPainter>
 #include <QPen>
+#include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
@@ -14,7 +16,50 @@
 namespace
 {
     /**
-     * @brief 按指定窗口样式计算“外框尺寸减去客户区尺寸”的那圈边框大小
+     * @brief 高亮边框覆盖窗口
+     *
+     * 一个独立的、无边框、透明、置顶、鼠标穿透的顶层窗口，仅用于在大屏四周绘制红色边框。
+     * 之所以不用 ExternalAppWindow::paintEvent 直接绘制，是因为外部程序窗口以原生 Win32
+     * 方式嵌入后会完全覆盖 Qt 客户区，导致 Qt 自绘的边框被外部窗口遮挡。
+     * 使用独立的置顶覆盖窗口可以确保边框始终可见，且不会干扰下方窗口的输入。
+     */
+    class HighlightOverlay : public QWidget
+    {
+      public:
+        /**
+         * @brief 构造函数
+         * @param parent 父窗口
+         */
+        explicit HighlightOverlay(QWidget *parent = nullptr) : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint
+                                                                                 | Qt::WindowStaysOnTopHint
+                                                                                 | Qt::WindowTransparentForInput)
+        {
+            // 背景完全透明，仅在 paintEvent 中绘制边框
+            setAttribute(Qt::WA_TranslucentBackground);
+            // 不抢焦点
+            setAttribute(Qt::WA_ShowWithoutActivating);
+        }
+
+      protected:
+        /**
+         * @brief 自绘：沿窗口四周绘制 4px 红色边框
+         * @param event 绘制事件
+         */
+        void paintEvent(QPaintEvent * /*event*/) override
+        {
+            QPainter painter(this);
+            painter.setRenderHint(QPainter::Antialiasing, false);
+            // 4px 粗的红色边框，颜色与管理界面高亮色保持一致
+            QPen pen(QColor(255, 77, 106), 4);
+            pen.setCosmetic(false);
+            painter.setPen(pen);
+            // 调整 2px 偏移，让边框正好沿窗口边缘（4px 宽的笔刷有一半在窗外）
+            painter.drawRect(rect().adjusted(2, 2, -3, -3));
+        }
+    };
+
+    /**
+     * @brief 按指定窗口样式计算"外框尺寸减去客户区尺寸"的那圈边框大小
      *
      * @param style   窗口样式（GWL_STYLE）
      * @param exStyle 扩展窗口样式（GWL_EXSTYLE）
@@ -1877,22 +1922,58 @@ void ExternalAppWindow::setHighlighted(bool highlighted)
         return;
     }
     m_highlighted = highlighted;
-    update();
+
+    if (highlighted)
+    {
+        // 首次启用时懒加载创建覆盖窗口，避免未使用场景下的资源开销
+        if (m_highlightOverlay == nullptr)
+        {
+            m_highlightOverlay = new HighlightOverlay(nullptr);
+        }
+        updateOverlayGeometry();
+        m_highlightOverlay->show();
+        m_highlightOverlay->raise();
+    }
+    else
+    {
+        if (m_highlightOverlay != nullptr)
+        {
+            m_highlightOverlay->hide();
+        }
+    }
 }
 
 void ExternalAppWindow::paintEvent(QPaintEvent *event)
 {
+    // 红色边框不再在此绘制：外部原生窗口会完全覆盖客户区，
+    // 边框改由独立的置顶覆盖窗口 HighlightOverlay 绘制
     QMainWindow::paintEvent(event);
-    if (!m_highlighted)
+}
+
+void ExternalAppWindow::moveEvent(QMoveEvent *event)
+{
+    QMainWindow::moveEvent(event);
+    updateOverlayGeometry();
+}
+
+void ExternalAppWindow::resizeEvent(QResizeEvent *event)
+{
+    QMainWindow::resizeEvent(event);
+    updateOverlayGeometry();
+}
+
+void ExternalAppWindow::updateOverlayGeometry()
+{
+    if (m_highlightOverlay == nullptr)
     {
         return;
     }
-    // 高亮态：沿窗口客户区四周绘制 4px 红色边框，不占用额外空间
-    QPainter painter(this);
-    QPen pen(QColor(255, 77, 106), 4);
-    pen.setCosmetic(false);
-    painter.setPen(pen);
-    painter.drawRect(rect().adjusted(2, 2, -3, -3));
+    // 覆盖窗口与大屏窗口保持相同的几何位置与尺寸，确保边框正好沿屏幕边缘显示
+    m_highlightOverlay->setGeometry(geometry());
+    if (m_highlightOverlay->isVisible())
+    {
+        m_highlightOverlay->raise();
+    }
 }
 
 void ExternalAppWindow::stopPptSession(const QString &appId)
@@ -2042,6 +2123,12 @@ ExternalAppWindow::~ExternalAppWindow()
     // 统一走 releaseAllApps：结束 PPT 放映会话、外部进程与标签页，
     // 保证退出时不会遗留进程、COM 对象与定时器对已释放对象的访问
     releaseAllApps();
+    // 销毁高亮边框覆盖窗口（独立顶层窗口，无父对象，需手动释放）
+    if (m_highlightOverlay != nullptr)
+    {
+        delete m_highlightOverlay;
+        m_highlightOverlay = nullptr;
+    }
     delete ui;
     screenList.clear();
     delete tabBar;

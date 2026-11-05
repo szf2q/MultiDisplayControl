@@ -137,19 +137,33 @@ class ExternalAppWindow : public QMainWindow
     /**
      * @brief 设置屏幕高亮状态（管理界面选中时在大屏四周显示红色边框）
      *
-     * 红色边框用于在多屏场景下标识当前正在管理界面编辑的是哪块屏幕，
-     * 通过重写 paintEvent 直接在窗口客户区四周绘制，不影响内部嵌入的外部程序。
+     * 红色边框用于在多屏场景下标识当前正在管理界面编辑的是哪块屏幕。
+     * 由于外部程序窗口是以原生 Win32 方式嵌入的，会完全覆盖 Qt 客户区，
+     * 因此采用独立的透明置顶覆盖窗口（HighlightOverlay）来绘制红色边框，
+     * 确保边框始终显示在最上层、不被嵌入的外部窗口遮挡。
      *
-     * @param highlighted true 显示红色边框，false 恢复无边框
+     * @param highlighted true 显示红色边框，false 隐藏边框
      */
     void setHighlighted(bool highlighted);
 
   protected:
     /**
-     * @brief 自绘：高亮态下绘制四周红色边框
+     * @brief 自绘事件（保留默认实现，红色边框改由独立覆盖窗口绘制）
      * @param event 绘制事件
      */
     void paintEvent(QPaintEvent *event) override;
+
+    /**
+     * @brief 窗口移动事件：同步更新高亮覆盖窗口的位置
+     * @param event 移动事件
+     */
+    void moveEvent(QMoveEvent *event) override;
+
+    /**
+     * @brief 窗口尺寸变化事件：同步更新高亮覆盖窗口的大小
+     * @param event 尺寸变化事件
+     */
+    void resizeEvent(QResizeEvent *event) override;
 
     /**
      * @brief 事件过滤器：同步被嵌入的外部程序窗口尺寸
@@ -347,6 +361,15 @@ class ExternalAppWindow : public QMainWindow
     bool appsLoading = false;
     /** @brief 是否处于高亮选中态（管理界面选中时大屏四周显示红色边框） */
     bool m_highlighted = false;
+    /** @brief 高亮边框覆盖窗口（独立透明置顶窗口，避免被嵌入的外部原生窗口遮挡） */
+    QWidget *m_highlightOverlay = nullptr;
+    /**
+     * @brief 同步高亮覆盖窗口的位置与大小
+     *
+     * 在窗口移动、尺寸变化或首次创建覆盖窗口时调用，
+     * 确保覆盖窗口与大屏窗口的几何始终一致。
+     */
+    void updateOverlayGeometry();
     /** @brief 软件 id 到标签页控件的映射，用于热更新时稳定定位标签 */
     QHash<QString, QWidget *> appTabWidgets;
     /** @brief 软件 id 到 PPT 放映会话的映射，用于热更新时结束放映 */
