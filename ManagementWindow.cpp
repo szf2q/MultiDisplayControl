@@ -1,4 +1,4 @@
-﻿#include "ManagementWindow.h"
+#include "ManagementWindow.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -33,8 +33,15 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     QFile styleFile(QStringLiteral(":/qss/manager.css"));
     if (styleFile.open(QIODevice::ReadOnly))
     {
-        setStyleSheet(QString::fromUtf8(styleFile.readAll()));
+        QString styleSheet = QString::fromUtf8(styleFile.readAll());
         styleFile.close();
+        // 选中屏幕卡片使用红色边框，视觉上更清晰地标识当前编辑对象
+        styleSheet += QStringLiteral(
+            "QFrame#screenCard[selected=\"true\"] {"
+            "  border: 2px solid #ff4d6a;"
+            "  background: #1a2636;"
+            "}");
+        setStyleSheet(styleSheet);
     }
 
     // ==================== 顶部标题栏 ====================
