@@ -17,7 +17,8 @@ class QSpinBox;
  * @brief 物理屏布局示意图
  *
  * 按所有物理屏的真实几何等比缩放绘制矩形，并标注序号、名称、分辨率与主屏标记；
- * 点击某块物理屏可选中对应屏幕配置，选中态用红色边框标识，帮助用户快速定位。
+ * 点击某块物理屏可选中对应屏幕配置，选中态用青色边框标识，帮助用户快速定位；
+ * 支持拖动物理屏调整示意图中的布局位置（仅影响管理界面显示，不改变真实物理屏位置与配置）。
  */
 class PhysicalScreenMap : public QWidget
 {
@@ -37,7 +38,7 @@ class PhysicalScreenMap : public QWidget
     void setConfig(MultiScreenConfig *config);
 
     /**
-     * @brief 设置选中的物理屏名称（红色边框）
+     * @brief 设置选中的物理屏名称（青色边框）
      * @param displayName QScreen::name()，空字符串表示无选中
      */
     void setSelectedScreen(const QString &displayName);
@@ -62,10 +63,22 @@ class PhysicalScreenMap : public QWidget
     void paintEvent(QPaintEvent *event) override;
 
     /**
-     * @brief 鼠标按下：命中物理屏矩形时发出 screenClicked 信号
+     * @brief 鼠标按下：命中物理屏矩形时记录拖拽起点
      * @param event 鼠标事件
      */
     void mousePressEvent(QMouseEvent *event) override;
+
+    /**
+     * @brief 鼠标移动：拖拽状态下更新屏幕位置
+     * @param event 鼠标事件
+     */
+    void mouseMoveEvent(QMouseEvent *event) override;
+
+    /**
+     * @brief 鼠标释放：结束拖拽
+     * @param event 鼠标事件
+     */
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
   private:
     /**
@@ -75,10 +88,34 @@ class PhysicalScreenMap : public QWidget
      */
     int hitTest(const QPoint &pos) const;
 
+    /**
+     * @brief 获取物理屏在示意图中的显示矩形（含自定义拖拽偏移）
+     * @param screenIndex 物理屏下标
+     * @param bounding    所有屏的外接矩形
+     * @param scale       缩放比例
+     * @param baseOffset  基础偏移（居中用）
+     * @return 显示矩形
+     */
+    QRectF screenDisplayRect(int screenIndex, const QRectF &bounding, double scale,
+                             const QPointF &baseOffset) const;
+
     /** 配置引用，用于读取屏幕序号与主屏标记，可为 nullptr */
     MultiScreenConfig *m_config = nullptr;
-    /** 选中的物理屏名称（红色边框） */
+    /** 选中的物理屏名称（青色边框） */
     QString m_selected;
+    /** 是否正在拖拽某块物理屏 */
+    bool m_dragging = false;
+    /** 正在拖拽的物理屏下标 */
+    int m_dragIndex = -1;
+    /** 拖拽起点相对于屏幕矩形左上角的偏移（像素，未缩放） */
+    QPoint m_dragOffset;
+    /**
+     * @brief 物理屏在示意图中的自定义偏移（像素，已缩放后的显示坐标）
+     *
+     * key 为物理屏名称（QScreen::name()），value 为相对默认位置的偏移量。
+     * 仅用于管理界面显示，不影响真实物理屏位置与配置文件。
+     */
+    QHash<QString, QPoint> m_customOffsets;
 };
 
 /**
@@ -204,6 +241,13 @@ class ScreenCard : public QFrame
 
   signals:
     /**
+     * @brief 屏幕序号被修改
+     * @param row      行号
+     * @param newIndex 新序号
+     */
+    void indexChanged(int row, int newIndex);
+
+    /**
      * @brief 屏幕名称被修改
      * @param row  行号
      * @param name 新名称
@@ -222,12 +266,6 @@ class ScreenCard : public QFrame
      * @param row 行号
      */
     void selected(int row);
-
-    /**
-     * @brief 请求删除该屏
-     * @param row 行号
-     */
-    void removeRequested(int row);
 
     /**
      * @brief 从软件清单拖入软件
@@ -279,27 +317,24 @@ class ScreenCard : public QFrame
   private:
     /** 当前行号 */
     int m_row = 0;
-    /** 序号徽标 */
-    QLabel *indexLabel = nullptr;
+    /** 序号输入框（可手动设置屏幕序号） */
+    QSpinBox *indexSpin = nullptr;
     /** 屏幕名称输入框 */
     QLineEdit *nameEdit = nullptr;
     /** 物理屏信息标签 */
     QLabel *displayLabel = nullptr;
-    /** 拖拽手柄 */
-    QLabel *dragHandle = nullptr;
     /** 软件分配列表 */
     AppAssignmentList *assignmentList = nullptr;
     /** 标签栏偏移 */
     QSpinBox *offsetSpin = nullptr;
-    /** 删除按钮 */
-    QPushButton *removeButton = nullptr;
 };
 
 /**
  * @brief 屏幕布局画布
  *
- * 组合物理屏示意图、屏序卡片区与添加/删除操作，负责维护配置中的屏幕顺序、
- * 绑定关系、屏幕名称与软件分配。
+ * 组合物理屏示意图与屏幕卡片列表，负责维护配置中的屏幕序号、
+ * 绑定关系、屏幕名称与软件分配。屏幕由物理屏自动获取，不可手动增删；
+ * 屏幕序号可手动设置，卡片按序号排序显示。
  */
 class ScreenLayoutCanvas : public QWidget
 {
@@ -329,14 +364,9 @@ class ScreenLayoutCanvas : public QWidget
      */
     int selectedRow() const;
 
-    /**
-     * @brief 添加一块屏幕（供管理界面顶部按钮调用）
-     */
-    void addScreen();
-
   signals:
     /**
-     * @brief 屏幕配置发生变化（名称、顺序、分配、偏移、增删）
+     * @brief 屏幕配置发生变化（序号、名称、分配、偏移）
      */
     void configChanged();
 
@@ -356,16 +386,6 @@ class ScreenLayoutCanvas : public QWidget
 
   private slots:
     /**
-     * @brief 添加一块屏幕
-     */
-    void onAddScreen();
-
-    /**
-     * @brief 删除当前选中屏幕
-     */
-    void onRemoveScreen();
-
-    /**
      * @brief 选中屏幕
      * @param row 行号
      */
@@ -378,11 +398,11 @@ class ScreenLayoutCanvas : public QWidget
     void onScreenMapClicked(const QString &displayName);
 
     /**
-     * @brief 交换/移动屏幕顺序
-     * @param fromRow 源行号
-     * @param toRow   目标行号
+     * @brief 更新屏幕序号
+     * @param row      行号
+     * @param newIndex 新序号
      */
-    void onScreenMoved(int fromRow, int toRow);
+    void onIndexChanged(int row, int newIndex);
 
     /**
      * @brief 更新屏幕名称
@@ -400,26 +420,17 @@ class ScreenLayoutCanvas : public QWidget
 
   private:
     /**
-     * @brief 重新编号：序号始终等于列表顺序
+     * @brief 同步物理屏与配置：为每块物理屏创建对应配置，移除不存在的屏
+     *
+     * 屏幕数量由当前连接的物理屏决定，用户不能手动增删。
+     * 已存在的配置项按 displayName 匹配并保留；新增物理屏自动创建默认配置。
      */
-    void renumberScreens();
+    void syncPhysicalScreens();
 
     /**
-     * @brief 确保主屏排第一位（1 号屏）
-     *
-     * 遍历 screenList，将标记为 primaryScreen 的屏幕移动到第 0 位，
-     * 保证界面展示与运行时 Alt+1 都对应主屏。其它屏幕保持原有相对顺序。
-     * 没有主屏标记时不做调整。
-     *
-     * @return true 表示发生了重排，false 表示顺序未变
+     * @brief 按 screenIndex 从小到大对屏幕列表排序
      */
-    bool ensurePrimaryFirst();
-
-    /**
-     * @brief 找到尚未被任何屏幕配置占用的物理屏
-     * @return 物理屏名称，找不到返回空字符串
-     */
-    QString findFreeScreenName() const;
+    void sortScreensByIndex();
 
     /**
      * @brief 按软件 id 查找软件名称

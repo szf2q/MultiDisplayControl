@@ -8,6 +8,7 @@
 #include "ScreenConfig.h"
 
 class QComboBox;
+class QFrame;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -173,7 +174,7 @@ class SoftwareLibraryPanel : public QWidget
     void onFilterChanged();
 
     /**
-     * @brief 列表选中项变化
+     * @brief 列表选中项变化，同步更新右侧预览
      */
     void onCurrentItemChanged();
 
@@ -238,6 +239,11 @@ class SoftwareLibraryPanel : public QWidget
      */
     SoftwareItem *findSoftware(const QString &softwareId);
 
+    /**
+     * @brief 更新右侧预览面板，显示当前选中软件的信息
+     */
+    void updatePreview();
+
     MultiScreenConfig *m_config = nullptr;
 
     QLineEdit *searchEdit = nullptr;
@@ -246,6 +252,14 @@ class SoftwareLibraryPanel : public QWidget
     QPushButton *addButton = nullptr;
     QPushButton *editButton = nullptr;
     QPushButton *removeButton = nullptr;
+
+    // 右侧预览面板控件
+    QLabel *previewImageLabel = nullptr;
+    QLabel *previewNameLabel = nullptr;
+    QLabel *previewTypeLabel = nullptr;
+    QLabel *previewPathLabel = nullptr;
+    QLabel *previewWindowTitleLabel = nullptr;
+    QLabel *previewRemarkLabel = nullptr;
 };
 
 #endif  // SOFTWARELIBRARYPANEL_H

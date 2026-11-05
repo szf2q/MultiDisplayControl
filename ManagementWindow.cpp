@@ -61,10 +61,6 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     reloadButton->setMinimumWidth(150);
     closeButton->setMinimumWidth(90);
 
-    // 添加屏幕入口统一放在顶部操作区，与保存按钮相邻，屏幕卡片区不再重复提供
-    addScreenButton = new QPushButton(QString::fromUtf8("+ 添加屏幕"), this);
-    addScreenButton->setMinimumWidth(130);
-
     QVBoxLayout *titleLayout = new QVBoxLayout();
     titleLayout->setContentsMargins(0, 0, 0, 0);
     titleLayout->setSpacing(2);
@@ -75,7 +71,6 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     headerLayout->addLayout(titleLayout);
     headerLayout->addWidget(dirtyLabel);
     headerLayout->addStretch(1);
-    headerLayout->addWidget(addScreenButton);
     headerLayout->addWidget(saveButton);
     headerLayout->addWidget(reloadButton);
     headerLayout->addWidget(closeButton);
@@ -147,7 +142,6 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     connect(saveButton, &QPushButton::clicked, this, [this]() { onSave(); });
     connect(reloadButton, &QPushButton::clicked, this, [this]() { onReload(); });
     connect(closeButton, &QPushButton::clicked, this, [this]() { hide(); });
-    connect(addScreenButton, &QPushButton::clicked, this, [this]() { layoutCanvas->addScreen(); });
     connect(showIndexCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
     connect(sortScreenCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });
     connect(debugModeCheck, &QCheckBox::toggled, this, [this](bool) { onGlobalSettingChanged(); });

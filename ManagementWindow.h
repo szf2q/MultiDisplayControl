@@ -203,8 +203,6 @@ class ManagementWindow : public QWidget
     QPushButton *saveButton = nullptr;
     QPushButton *reloadButton = nullptr;
     QPushButton *closeButton = nullptr;
-    /** 添加屏幕按钮（位于顶部操作区，触发画布的添加屏幕流程） */
-    QPushButton *addScreenButton = nullptr;
 
     SoftwareLibraryPanel *libraryPanel = nullptr;
     ScreenLayoutCanvas *layoutCanvas = nullptr;
