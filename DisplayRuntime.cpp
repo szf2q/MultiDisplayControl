@@ -163,6 +163,22 @@ MultiScreenConfig DisplayRuntime::currentConfig() const
     return m_config;
 }
 
+void DisplayRuntime::highlightScreen(int screenIndex)
+{
+    // 遍历所有已创建的屏幕窗口，统一更新高亮状态
+    const QStringList keys = GlobalVariants::winList.keys();
+    for (int i = 0; i < keys.size(); i++)
+    {
+        ExternalAppWindow *win = qobject_cast<ExternalAppWindow *>(GlobalVariants::winList.value(keys[i]));
+        if (win == nullptr)
+        {
+            continue;
+        }
+        const bool shouldHighlight = (screenIndex > 0 && keys[i] == QString::number(screenIndex));
+        win->setHighlighted(shouldHighlight);
+    }
+}
+
 QScreen *DisplayRuntime::resolveScreen(const ScreenConfig &screen, int ordinal, bool sortScreen) const
 {
     const QList<QScreen *> screens = QGuiApplication::screens();

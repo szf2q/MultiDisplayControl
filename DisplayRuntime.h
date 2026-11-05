@@ -67,6 +67,16 @@ class DisplayRuntime : public QObject
      */
     MultiScreenConfig currentConfig() const;
 
+    /**
+     * @brief 高亮指定屏幕（显示红色边框），用于管理界面选中时的大屏反馈
+     *
+     * 同时会把之前高亮的屏幕取消高亮，保证始终只有一块屏幕处于高亮态。
+     * 传 0 或无效序号则取消所有高亮。
+     *
+     * @param screenIndex 屏幕序号（1-based，与配置中的 screenIndex 一致）
+     */
+    void highlightScreen(int screenIndex);
+
   private:
     /**
      * @brief 解析配置屏幕对应的物理屏

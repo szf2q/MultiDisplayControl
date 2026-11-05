@@ -494,6 +494,9 @@ int main(int argc, char *argv[])
                              GlobalKeyWatcher::watcher.setWinKeyDisabled(newConfig.disableWinKey);
                              manager.notifyApplyResult(warnings);
                          });
+        // 管理界面选中某块屏幕时，对应大屏四周显示红色边框，方便多屏定位
+        QObject::connect(&manager, &ManagementWindow::screenHighlightChanged, &runtime,
+                         [&runtime](int screenIndex) { runtime.highlightScreen(screenIndex); });
 
         QTimer::singleShot(500, [=]() { reloadScreen(GlobalVariants::winList); });
         return a.exec();

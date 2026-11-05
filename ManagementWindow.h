@@ -68,12 +68,29 @@ class ManagementWindow : public QWidget
      */
     void applyRequested(const MultiScreenConfig &config);
 
+    /**
+     * @brief 当前选中的屏幕序号变化（大屏红色边框反馈用）
+     *
+     * 在管理界面点击不同屏幕卡片或物理屏示意图时发出，
+     * 运行时收到后在对应大屏上显示红色边框，方便用户定位正在编辑的屏幕。
+     * 未选中任何屏幕时参数为 0。
+     *
+     * @param screenIndex 屏幕序号（1-based），0 表示取消高亮
+     */
+    void screenHighlightChanged(int screenIndex);
+
   protected:
     /**
      * @brief 关闭按钮只隐藏窗口，不退出程序
      * @param event 关闭事件
      */
     void closeEvent(QCloseEvent *event) override;
+
+    /**
+     * @brief 显示时恢复当前选中屏幕的大屏高亮
+     * @param event 显示事件
+     */
+    void showEvent(QShowEvent *event) override;
 
     /**
      * @brief 无边框窗口拖动：按下空白区域开始拖动

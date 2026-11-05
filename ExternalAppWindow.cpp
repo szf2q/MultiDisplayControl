@@ -2,6 +2,8 @@
 
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QPainter>
+#include <QPen>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
@@ -1866,6 +1868,31 @@ void ExternalAppWindow::refreshTabTitles()
         }
     }
     syncFloatingTabBar();
+}
+
+void ExternalAppWindow::setHighlighted(bool highlighted)
+{
+    if (m_highlighted == highlighted)
+    {
+        return;
+    }
+    m_highlighted = highlighted;
+    update();
+}
+
+void ExternalAppWindow::paintEvent(QPaintEvent *event)
+{
+    QMainWindow::paintEvent(event);
+    if (!m_highlighted)
+    {
+        return;
+    }
+    // 高亮态：沿窗口客户区四周绘制 4px 红色边框，不占用额外空间
+    QPainter painter(this);
+    QPen pen(QColor(255, 77, 106), 4);
+    pen.setCosmetic(false);
+    painter.setPen(pen);
+    painter.drawRect(rect().adjusted(2, 2, -3, -3));
 }
 
 void ExternalAppWindow::stopPptSession(const QString &appId)

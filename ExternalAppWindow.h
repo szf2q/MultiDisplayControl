@@ -134,7 +134,23 @@ class ExternalAppWindow : public QMainWindow
      */
     void refreshTabTitles();
 
+    /**
+     * @brief 设置屏幕高亮状态（管理界面选中时在大屏四周显示红色边框）
+     *
+     * 红色边框用于在多屏场景下标识当前正在管理界面编辑的是哪块屏幕，
+     * 通过重写 paintEvent 直接在窗口客户区四周绘制，不影响内部嵌入的外部程序。
+     *
+     * @param highlighted true 显示红色边框，false 恢复无边框
+     */
+    void setHighlighted(bool highlighted);
+
   protected:
+    /**
+     * @brief 自绘：高亮态下绘制四周红色边框
+     * @param event 绘制事件
+     */
+    void paintEvent(QPaintEvent *event) override;
+
     /**
      * @brief 事件过滤器：同步被嵌入的外部程序窗口尺寸
      *
@@ -329,6 +345,8 @@ class ExternalAppWindow : public QMainWindow
      * 统一由 loadApps() 结束时切回配置中的第一个应用。
      */
     bool appsLoading = false;
+    /** @brief 是否处于高亮选中态（管理界面选中时大屏四周显示红色边框） */
+    bool m_highlighted = false;
     /** @brief 软件 id 到标签页控件的映射，用于热更新时稳定定位标签 */
     QHash<QString, QWidget *> appTabWidgets;
     /** @brief 软件 id 到 PPT 放映会话的映射，用于热更新时结束放映 */

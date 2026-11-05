@@ -174,6 +174,17 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
             [this](int screenRow, const QString &softwareId, int insertRow) {
                 onSoftwareDropped(screenRow, softwareId, insertRow);
             });
+    // 选中屏幕时同步高亮大屏（红色边框），方便多屏场景下定位当前编辑的屏幕
+    connect(layoutCanvas, &ScreenLayoutCanvas::screenSelected, this, [this](int row) {
+        if (m_config.screenList.size() > 0 && row >= 0 && row < m_config.screenList.size())
+        {
+            emit screenHighlightChanged(m_config.screenList[row].screenIndex);
+        }
+        else
+        {
+            emit screenHighlightChanged(0);
+        }
+    });
 }
 
 void ManagementWindow::setConfig(const MultiScreenConfig &config)
@@ -267,9 +278,25 @@ void ManagementWindow::notifyApplyResult(const QStringList &warnings)
 
 void ManagementWindow::closeEvent(QCloseEvent *event)
 {
+    // 隐藏管理界面时清除所有大屏的红色高亮边框
+    emit screenHighlightChanged(0);
     // 关闭仅隐藏，保持管理界面状态与运行时展示不受影响
     hide();
     event->ignore();
+}
+
+void ManagementWindow::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    // 显示管理界面时，如果已选中某块屏幕，立即在大屏上显示红色边框
+    if (layoutCanvas != nullptr && m_config.screenList.size() > 0)
+    {
+        const int row = layoutCanvas->selectedRow();
+        if (row >= 0 && row < m_config.screenList.size())
+        {
+            emit screenHighlightChanged(m_config.screenList[row].screenIndex);
+        }
+    }
 }
 
 void ManagementWindow::mousePressEvent(QMouseEvent *event)
