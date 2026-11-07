@@ -271,6 +271,10 @@ class ManagementWindow : public QWidget
     class QSplitter *contentSplitter = nullptr;
     class QSplitter *leftSplitter = nullptr;
     ScreenLayoutCanvas *layoutCanvas = nullptr;
+    /** 中间「x号屏的软件」面板，宽度上限决定其可拖动的最大宽度 */
+    QWidget *screenListGroup = nullptr;
+    /** 右侧「软件清单」面板，宽度上限决定其可拖动的最大宽度 */
+    QWidget *libraryGroup = nullptr;
 
     // 左下软件预览
     QLabel *previewTitleLabel = nullptr;

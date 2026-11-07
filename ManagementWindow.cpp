@@ -30,7 +30,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     setObjectName(QStringLiteral("managementWindow"));
     // 无边框窗口：去掉系统标题栏与阴影边框，由窗口内部的标题区承担拖动与关闭职责
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    // 管理界面默认尺寸：打开时铺满所在屏幕的可用区域（在 showManager 中按当前屏幕动态调整）
+    // 管理界面默认尺寸：按主屏 90% 计算（在 showManager 中按当前屏幕动态调整）
     resize(1200, 760);
     // 最小尺寸：保证在低分辨率屏幕上也能正常使用
     setMinimumSize(820, 560);
@@ -201,7 +201,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     leftSplitter->setChildrenCollapsible(false);
 
     // 中间：选中屏幕的软件清单
-    QWidget *screenListGroup = new QWidget(this);
+    screenListGroup = new QWidget(this);
     screenListGroup->setObjectName(QStringLiteral("panelGroup"));
     QVBoxLayout *screenListLayout = new QVBoxLayout(screenListGroup);
     screenListLayout->setContentsMargins(10, 10, 10, 10);
@@ -226,7 +226,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
 
     // 右侧：总软件清单
     libraryPanel = new SoftwareLibraryPanel(this);
-    QWidget *libraryGroup = new QWidget(this);
+    libraryGroup = new QWidget(this);
     libraryGroup->setObjectName(QStringLiteral("panelGroup"));
     QVBoxLayout *libraryLayout = new QVBoxLayout(libraryGroup);
     libraryLayout->setContentsMargins(10, 10, 10, 10);
@@ -238,8 +238,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     libraryGroup->setMaximumWidth(300);
     libraryGroup->setMinimumWidth(180);
 
-    // 横向三栏 Splitter，宽度比例 36:9:1
-    // 右侧软件清单宽度为自身原始宽度的三分之一，进一步压缩腾出空间
+    // 横向三栏 Splitter：默认宽度在 refreshSplitterSizes 中按中间、右侧面板的最大宽度分配
     contentSplitter = new QSplitter(Qt::Horizontal, this);
     contentSplitter->addWidget(leftSplitter);
     contentSplitter->addWidget(screenListGroup);
@@ -366,8 +365,7 @@ void ManagementWindow::toggle()
 
 void ManagementWindow::showManager()
 {
-    // 管理界面直接铺满所在屏幕的可用区域（已扣除任务栏），即手动拖动放大能达到的最大尺寸；
-    // 鼠标所在屏幕优先，便于多屏环境下就地管理
+    // 管理界面以所在屏幕 90% 的尺寸显示，并在鼠标所在屏幕居中，便于多屏环境下就地管理
     QScreen *targetScreen = QGuiApplication::screenAt(QCursor::pos());
     if (targetScreen == nullptr)
     {
@@ -375,12 +373,15 @@ void ManagementWindow::showManager()
     }
     if (targetScreen != nullptr)
     {
-        const QRect available = targetScreen->availableGeometry();
-        const int windowWidth = qMax(minimumWidth(), available.width());
-        const int windowHeight = qMax(minimumHeight(), available.height());
+        const QRect screenGeo = targetScreen->geometry();
+        // 窗口尺寸为屏幕的 90%
+        const int windowWidth = qMax(minimumWidth(), static_cast<int>(screenGeo.width() * 0.9));
+        const int windowHeight = qMax(minimumHeight(), static_cast<int>(screenGeo.height() * 0.9));
         resize(windowWidth, windowHeight);
-        // 与可用区域左上角对齐，整块界面完整可见
-        move(available.topLeft());
+        // 水平及垂直居中：屏幕中心减去窗口尺寸的一半
+        const int x = screenGeo.center().x() - windowWidth / 2;
+        const int y = screenGeo.center().y() - windowHeight / 2;
+        move(x, y);
     }
     if (isMinimized())
     {
@@ -396,15 +397,15 @@ void ManagementWindow::showManager()
 
 void ManagementWindow::refreshSplitterSizes()
 {
-    // 三栏宽度：左:中:右 = 36 : 9 : 1
-    if (contentSplitter != nullptr && contentSplitter->width() > 0)
+    // 中间「x号屏的软件」与右侧「软件清单」默认按各自允许的最大宽度显示，
+    // 即手动拖动分隔条能拉到的宽度；剩余宽度全部给左侧（屏幕布局 + 软件预览）
+    if (contentSplitter != nullptr && contentSplitter->width() > 0 && screenListGroup != nullptr &&
+        libraryGroup != nullptr)
     {
-        const int totalW = contentSplitter->width();
-        const int totalStretch = 36 + 9 + 1;
-        const int w0 = totalW * 36 / totalStretch;
-        const int w1 = totalW * 9 / totalStretch;
-        const int w2 = totalW - w0 - w1;
-        contentSplitter->setSizes(QList<int>() << w0 << w1 << w2);
+        const int middleWidth = screenListGroup->maximumWidth();
+        const int rightWidth = libraryGroup->maximumWidth();
+        const int leftWidth = qMax(0, contentSplitter->width() - middleWidth - rightWidth);
+        contentSplitter->setSizes(QList<int>() << leftWidth << middleWidth << rightWidth);
     }
     // 左侧纵向：屏幕布局 : 软件预览 = 1 : 1
     if (leftSplitter != nullptr && leftSplitter->height() > 0)
