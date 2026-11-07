@@ -8,8 +8,12 @@
 #include "ScreenConfig.h"
 
 class QCheckBox;
+class QFrame;
 class QLabel;
+class QListWidget;
+class QListWidgetItem;
 class QPushButton;
+class QSplitter;
 class ScreenLayoutCanvas;
 class SoftwareLibraryPanel;
 
@@ -137,6 +141,24 @@ class ManagementWindow : public QWidget
      */
     void onGlobalSettingChanged();
 
+    /**
+     * @brief 选中屏幕变化，更新右侧软件清单
+     * @param row 屏幕行号
+     */
+    void onScreenSelected(int row);
+
+    /**
+     * @brief 软件清单选中变化，更新底部预览
+     * @param softwareId 软件 id
+     */
+    void onLibrarySelectionChanged(const QString &softwareId);
+
+    /**
+     * @brief 右侧屏幕软件清单选中变化，更新底部预览
+     * @param item 列表项
+     */
+    void onScreenSoftwareClicked(QListWidgetItem *item);
+
   private:
     /**
      * @brief 标记存在未保存修改
@@ -178,6 +200,18 @@ class ManagementWindow : public QWidget
      */
     int boundScreenRow(const QString &softwareId) const;
 
+    /**
+     * @brief 更新底部软件预览区
+     * @param softwareId 软件 id，为空时清空预览
+     */
+    void updateSoftwarePreview(const QString &softwareId);
+
+    /**
+     * @brief 刷新右侧选中屏幕的软件清单
+     * @param screenRow 屏幕行号
+     */
+    void refreshScreenSoftwareList(int screenRow);
+
     /** 工作配置（所有面板直接读写） */
     MultiScreenConfig m_config;
     /** 是否存在未保存修改 */
@@ -206,6 +240,21 @@ class ManagementWindow : public QWidget
 
     SoftwareLibraryPanel *libraryPanel = nullptr;
     ScreenLayoutCanvas *layoutCanvas = nullptr;
+
+    // 右侧选中屏幕的软件清单
+    QLabel *screenListTitle = nullptr;
+    QListWidget *screenSoftwareList = nullptr;
+
+    // 底部软件预览区
+    QLabel *previewTitleLabel = nullptr;
+    QLabel *previewImageLabel = nullptr;
+    QLabel *previewNameLabel = nullptr;
+    QLabel *previewTypeLabel = nullptr;
+    QLabel *previewPathLabel = nullptr;
+    QLabel *previewWindowTitleLabel = nullptr;
+    QLabel *previewRemarkLabel = nullptr;
+    /** 当前预览的软件 id（用于区分左侧清单选中 vs 右侧屏幕软件选中） */
+    QString m_currentPreviewId;
 };
 
 #endif  // MANAGEMENTWINDOW_H

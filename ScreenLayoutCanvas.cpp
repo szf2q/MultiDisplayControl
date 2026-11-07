@@ -1,4 +1,4 @@
-﻿#include "ScreenLayoutCanvas.h"
+#include "ScreenLayoutCanvas.h"
 
 #include <algorithm>
 #include <QApplication>
@@ -17,6 +17,7 @@
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
@@ -149,6 +150,48 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
                                  .arg(geometry.width())
                                  .arg(geometry.height());
         painter.drawText(targetRect, Qt::AlignCenter, text);
+
+        // 显示该屏分配的软件数量（底部居中）
+        if (m_config != nullptr)
+        {
+            int assignCount = 0;
+            for (int j = 0; j < m_config->screenList.size(); j++)
+            {
+                if (m_config->screenList[j].displayName == displayName)
+                {
+                    assignCount = m_config->screenList[j].assignments.size();
+                    break;
+                }
+            }
+            if (assignCount > 0)
+            {
+                QFont countFont = painter.font();
+                countFont.setFamily(QString::fromUtf8("微软雅黑"));
+                countFont.setPixelSize(11);
+                painter.setFont(countFont);
+                painter.setPen(QColor(140, 170, 200));
+                const QString countText = QString::fromUtf8("%1 个应用").arg(assignCount);
+                const QRectF countRect(targetRect.left(), targetRect.bottom() - 22, targetRect.width(), 16);
+                painter.drawText(countRect, Qt::AlignCenter, countText);
+            }
+        }
+
+        // 右下角调整大小手柄（仅选中态显示，便于识别当前操作的屏幕）
+        if (selected)
+        {
+            const int handleSize = 12;
+            const QRectF handleRect(targetRect.right() - handleSize - 2, targetRect.bottom() - handleSize - 2,
+                                    handleSize, handleSize);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(17, 192, 254));
+            // 绘制小三角形手柄
+            QPainterPath path;
+            path.moveTo(handleRect.bottomRight());
+            path.lineTo(handleRect.bottomLeft());
+            path.lineTo(handleRect.topRight());
+            path.closeSubpath();
+            painter.drawPath(path);
+        }
     }
 }
 
@@ -156,14 +199,43 @@ void PhysicalScreenMap::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton)
     {
+        int resizeIdx = -1;
+        if (hitResizeHandle(event->pos(), &resizeIdx))
+        {
+            // 命中右下角调整手柄，进入调整大小模式
+            const QList<QScreen *> screens = QGuiApplication::screens();
+            if (resizeIdx >= 0 && resizeIdx < screens.size())
+            {
+                m_dragMode = DragResize;
+                m_dragIndex = resizeIdx;
+                const QString &name = screens[resizeIdx]->name();
+                m_dragStartPos = event->pos();
+                QRectF bounding;
+                for (int i = 0; i < screens.size(); i++)
+                {
+                    bounding = bounding.united(QRectF(screens[i]->geometry()));
+                }
+                const double margin = 14;
+                const double scale = qMin((width() - margin * 2) / bounding.width(),
+                                          (height() - margin * 2) / bounding.height());
+                const double offsetX = margin + ((width() - margin * 2) - bounding.width() * scale) / 2.0;
+                const double offsetY = margin + ((height() - margin * 2) - bounding.height() * scale) / 2.0;
+                const QPointF baseOffset(offsetX, offsetY);
+                const QRectF rect = screenDisplayRect(resizeIdx, bounding, scale, baseOffset);
+                m_dragStartSize = rect.size().toSize();
+                setCursor(Qt::SizeFDiagCursor);
+                emit screenClicked(name);
+                return;
+            }
+        }
         const int idx = hitTest(event->pos());
         if (idx >= 0)
         {
             const QList<QScreen *> screens = QGuiApplication::screens();
             if (idx < screens.size())
             {
-                // 记录拖拽状态：后续 move 事件将按偏移更新自定义位置
-                m_dragging = true;
+                // 命中屏幕内部，进入拖动位置模式
+                m_dragMode = DragMove;
                 m_dragIndex = idx;
                 const QString &name = screens[idx]->name();
                 QRectF bounding;
@@ -179,8 +251,8 @@ void PhysicalScreenMap::mousePressEvent(QMouseEvent *event)
                 const QPointF baseOffset(offsetX, offsetY);
                 const QRectF rect = screenDisplayRect(idx, bounding, scale, baseOffset);
                 QPoint customOffset = m_customOffsets.value(name, QPoint(0, 0));
-                // 拖拽偏移 = 鼠标位置 - （默认位置 + 自定义偏移）
-                m_dragOffset = event->pos() - (rect.topLeft().toPoint() + customOffset);
+                // 拖拽偏移 = 鼠标位置 - 屏幕矩形左上角（含自定义偏移）
+                m_dragOffset = event->pos() - rect.topLeft().toPoint();
                 setCursor(Qt::ClosedHandCursor);
                 emit screenClicked(name);
                 return;
@@ -192,8 +264,9 @@ void PhysicalScreenMap::mousePressEvent(QMouseEvent *event)
 
 void PhysicalScreenMap::mouseMoveEvent(QMouseEvent *event)
 {
-    if (m_dragging && m_dragIndex >= 0)
+    if (m_dragMode == DragMove && m_dragIndex >= 0)
     {
+        // 拖动位置：更新自定义偏移
         const QList<QScreen *> screens = QGuiApplication::screens();
         if (m_dragIndex < screens.size())
         {
@@ -211,24 +284,53 @@ void PhysicalScreenMap::mouseMoveEvent(QMouseEvent *event)
             const QPointF baseOffset(offsetX, offsetY);
             const QRectF rect = screenDisplayRect(m_dragIndex, bounding, scale, baseOffset);
             // 计算新的自定义偏移
-            QPoint defaultTopLeft = rect.topLeft().toPoint();
+            QPoint defaultTopLeft = rect.topLeft().toPoint() - m_customOffsets.value(name, QPoint(0, 0));
             QPoint newTopLeft = event->pos() - m_dragOffset;
             QPoint newOffset = newTopLeft - defaultTopLeft;
             m_customOffsets[name] = newOffset;
             update();
         }
     }
+    else if (m_dragMode == DragResize && m_dragIndex >= 0)
+    {
+        // 调整大小：右下角拖拽，最小尺寸 80×60
+        const QList<QScreen *> screens = QGuiApplication::screens();
+        if (m_dragIndex < screens.size())
+        {
+            const QString &name = screens[m_dragIndex]->name();
+            const int dx = event->pos().x() - m_dragStartPos.x();
+            const int dy = event->pos().y() - m_dragStartPos.y();
+            const int newW = qMax(80, m_dragStartSize.width() + dx);
+            const int newH = qMax(60, m_dragStartSize.height() + dy);
+            m_customSizes[name] = QSize(newW, newH);
+            update();
+        }
+    }
     else
     {
+        // 未拖拽时，根据鼠标位置更新光标形状
+        int resizeIdx = -1;
+        if (hitResizeHandle(event->pos(), &resizeIdx))
+        {
+            setCursor(Qt::SizeFDiagCursor);
+        }
+        else if (hitTest(event->pos()) >= 0)
+        {
+            setCursor(Qt::OpenHandCursor);
+        }
+        else
+        {
+            setCursor(Qt::ArrowCursor);
+        }
         QWidget::mouseMoveEvent(event);
     }
 }
 
 void PhysicalScreenMap::mouseReleaseEvent(QMouseEvent *event)
 {
-    if (m_dragging)
+    if (m_dragMode != DragNone)
     {
-        m_dragging = false;
+        m_dragMode = DragNone;
         m_dragIndex = -1;
         setCursor(Qt::PointingHandCursor);
     }
@@ -284,12 +386,69 @@ QRectF PhysicalScreenMap::screenDisplayRect(int screenIndex, const QRectF &bound
         return QRectF();
     }
     const QRect geometry = screens[screenIndex]->geometry();
+    const QString &name = screens[screenIndex]->name();
     QRectF baseRect(baseOffset.x() + (geometry.x() - bounding.x()) * scale,
                     baseOffset.y() + (geometry.y() - bounding.y()) * scale, geometry.width() * scale,
                     geometry.height() * scale);
     // 加上该物理屏的自定义拖拽偏移（仅显示用，不影响真实配置）
-    const QPoint &customOffset = m_customOffsets.value(screens[screenIndex]->name(), QPoint(0, 0));
-    return baseRect.translated(customOffset);
+    const QPoint &customOffset = m_customOffsets.value(name, QPoint(0, 0));
+    baseRect.translate(customOffset);
+    // 如果有自定义大小，按自定义大小调整（保持左上角不变，只改宽高）
+    if (m_customSizes.contains(name))
+    {
+        const QSize &customSize = m_customSizes[name];
+        baseRect.setWidth(customSize.width());
+        baseRect.setHeight(customSize.height());
+    }
+    return baseRect;
+}
+
+bool PhysicalScreenMap::hitResizeHandle(const QPoint &pos, int *index) const
+{
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    if (screens.isEmpty())
+    {
+        return false;
+    }
+    QRectF bounding;
+    for (int i = 0; i < screens.size(); i++)
+    {
+        bounding = bounding.united(QRectF(screens[i]->geometry()));
+    }
+    if (bounding.width() <= 0 || bounding.height() <= 0)
+    {
+        return false;
+    }
+    const double margin = 14;
+    const double availableWidth = width() - margin * 2;
+    const double availableHeight = height() - margin * 2;
+    if (availableWidth <= 0 || availableHeight <= 0)
+    {
+        return false;
+    }
+    const double scale = qMin(availableWidth / bounding.width(), availableHeight / bounding.height());
+    const double offsetX = margin + (availableWidth - bounding.width() * scale) / 2.0;
+    const double offsetY = margin + (availableHeight - bounding.height() * scale) / 2.0;
+    const QPointF baseOffset(offsetX, offsetY);
+
+    // 调整手柄大小：右下角 16×16 区域
+    const int handleSize = 16;
+    // 从后往前遍历，后绘制的（上层）优先命中
+    for (int i = screens.size() - 1; i >= 0; i--)
+    {
+        const QRectF rect = screenDisplayRect(i, bounding, scale, baseOffset);
+        // 右下角区域
+        const QRectF handleRect(rect.right() - handleSize, rect.bottom() - handleSize, handleSize, handleSize);
+        if (handleRect.contains(pos))
+        {
+            if (index != nullptr)
+            {
+                *index = i;
+            }
+            return true;
+        }
+    }
+    return false;
 }
 AppAssignmentList::AppAssignmentList(QWidget *parent) : QListWidget(parent)
 {

@@ -8,6 +8,8 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPushButton>
@@ -97,7 +99,8 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     settingLayout->addWidget(disableGpuAccelerationCheck);
     settingLayout->addStretch(1);
 
-    // ==================== 两栏内容（软件清单 | 屏幕布局） ====================
+    // ==================== 三栏内容（软件清单 | 屏幕布局 | 选中屏软件） + 底部预览 ====================
+    // 左栏：软件清单
     libraryPanel = new SoftwareLibraryPanel(this);
     QWidget *libraryGroup = new QWidget(this);
     libraryGroup->setObjectName(QStringLiteral("panelGroup"));
@@ -108,23 +111,122 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     libraryLayout->addWidget(libraryTitle);
     libraryLayout->addWidget(libraryPanel, 1);
 
+    // 中栏：屏幕布局示意图
     QWidget *canvasGroup = new QWidget(this);
     canvasGroup->setObjectName(QStringLiteral("panelGroup"));
     QVBoxLayout *canvasLayout = new QVBoxLayout(canvasGroup);
     canvasLayout->setContentsMargins(10, 10, 10, 10);
-    QLabel *canvasTitle = new QLabel(QString::fromUtf8("屏幕布局（拖拽软件到卡片，拖动手柄调整屏序）"), canvasGroup);
+    QLabel *canvasTitle = new QLabel(
+        QString::fromUtf8("屏幕布局（可拖动调整位置和大小，仅显示用；点击选中屏幕）"), canvasGroup);
     canvasTitle->setObjectName(QStringLiteral("groupTitle"));
     layoutCanvas = new ScreenLayoutCanvas(canvasGroup);
     canvasLayout->addWidget(canvasTitle);
     canvasLayout->addWidget(layoutCanvas, 1);
 
-    QSplitter *splitter = new QSplitter(Qt::Horizontal, this);
-    splitter->addWidget(libraryGroup);
-    splitter->addWidget(canvasGroup);
-    splitter->setStretchFactor(0, 0);
-    splitter->setStretchFactor(1, 1);
-    splitter->setSizes(QList<int>() << 336 << 944);
-    splitter->setChildrenCollapsible(false);
+    // 右栏：选中屏幕的软件清单
+    QWidget *screenListGroup = new QWidget(this);
+    screenListGroup->setObjectName(QStringLiteral("panelGroup"));
+    QVBoxLayout *screenListLayout = new QVBoxLayout(screenListGroup);
+    screenListLayout->setContentsMargins(10, 10, 10, 10);
+    screenListTitle = new QLabel(QString::fromUtf8("选中屏幕的软件"), screenListGroup);
+    screenListTitle->setObjectName(QStringLiteral("groupTitle"));
+    screenSoftwareList = new QListWidget(screenListGroup);
+    screenSoftwareList->setSelectionMode(QAbstractItemView::SingleSelection);
+    screenSoftwareList->setIconSize(QSize(64, 36));
+    screenListLayout->addWidget(screenListTitle);
+    screenListLayout->addWidget(screenSoftwareList, 1);
+
+    // 顶部三栏 Splitter（横向）
+    QSplitter *topSplitter = new QSplitter(Qt::Horizontal, this);
+    topSplitter->addWidget(libraryGroup);
+    topSplitter->addWidget(canvasGroup);
+    topSplitter->addWidget(screenListGroup);
+    topSplitter->setStretchFactor(0, 0);
+    topSplitter->setStretchFactor(1, 1);
+    topSplitter->setStretchFactor(2, 0);
+    topSplitter->setSizes(QList<int>() << 280 << 600 << 240);
+    topSplitter->setChildrenCollapsible(false);
+
+    // 底部：软件预览大区域（横跨三栏）
+    QWidget *previewGroup = new QWidget(this);
+    previewGroup->setObjectName(QStringLiteral("panelGroup"));
+    QVBoxLayout *previewLayout = new QVBoxLayout(previewGroup);
+    previewLayout->setContentsMargins(10, 10, 10, 10);
+    previewTitleLabel = new QLabel(QString::fromUtf8("软件预览"), previewGroup);
+    previewTitleLabel->setObjectName(QStringLiteral("groupTitle"));
+
+    // 预览内容：左图 + 右文字信息
+    QHBoxLayout *previewContent = new QHBoxLayout();
+    previewContent->setSpacing(16);
+
+    previewImageLabel = new QLabel(previewGroup);
+    previewImageLabel->setAlignment(Qt::AlignCenter);
+    previewImageLabel->setMinimumSize(QSize(360, 220));
+    previewImageLabel->setStyleSheet(QStringLiteral(
+        "QLabel { background-color: #0f1f36; border: 1px solid #28507d; "
+        "border-radius: 6px; color: #6d8cb0; }"));
+    previewImageLabel->setText(QString::fromUtf8("暂无预览图"));
+
+    // 右侧文字信息区
+    QWidget *infoWidget = new QWidget(previewGroup);
+    QVBoxLayout *infoLayout = new QVBoxLayout(infoWidget);
+    infoLayout->setContentsMargins(0, 0, 0, 0);
+    infoLayout->setSpacing(6);
+
+    previewNameLabel = new QLabel(infoWidget);
+    previewNameLabel->setStyleSheet(
+        QStringLiteral("QLabel { font-size: 18px; font-weight: bold; color: #e0eefc; }"));
+    previewNameLabel->setWordWrap(true);
+
+    previewTypeLabel = new QLabel(infoWidget);
+    previewTypeLabel->setStyleSheet(QStringLiteral("color: #88aacc;"));
+
+    QFrame *divider = new QFrame(infoWidget);
+    divider->setFrameShape(QFrame::HLine);
+    divider->setStyleSheet(QStringLiteral("color: #28507d;"));
+
+    QLabel *pathTitle = new QLabel(QString::fromUtf8("路径"), infoWidget);
+    pathTitle->setStyleSheet(QStringLiteral("color: #88aacc; font-size: 12px;"));
+    previewPathLabel = new QLabel(infoWidget);
+    previewPathLabel->setWordWrap(true);
+    previewPathLabel->setStyleSheet(QStringLiteral("color: #c5d8ec; font-size: 12px;"));
+
+    QLabel *wtTitle = new QLabel(QString::fromUtf8("窗口标题"), infoWidget);
+    wtTitle->setStyleSheet(QStringLiteral("color: #88aacc; font-size: 12px;"));
+    previewWindowTitleLabel = new QLabel(infoWidget);
+    previewWindowTitleLabel->setWordWrap(true);
+    previewWindowTitleLabel->setStyleSheet(QStringLiteral("color: #c5d8ec; font-size: 12px;"));
+
+    QLabel *remarkTitle = new QLabel(QString::fromUtf8("备注"), infoWidget);
+    remarkTitle->setStyleSheet(QStringLiteral("color: #88aacc; font-size: 12px;"));
+    previewRemarkLabel = new QLabel(infoWidget);
+    previewRemarkLabel->setWordWrap(true);
+    previewRemarkLabel->setStyleSheet(QStringLiteral("color: #c5d8ec; font-size: 12px;"));
+
+    infoLayout->addWidget(previewNameLabel);
+    infoLayout->addWidget(previewTypeLabel);
+    infoLayout->addWidget(divider);
+    infoLayout->addWidget(pathTitle);
+    infoLayout->addWidget(previewPathLabel);
+    infoLayout->addWidget(wtTitle);
+    infoLayout->addWidget(previewWindowTitleLabel);
+    infoLayout->addWidget(remarkTitle);
+    infoLayout->addWidget(previewRemarkLabel);
+    infoLayout->addStretch(1);
+
+    previewContent->addWidget(previewImageLabel, 0);
+    previewContent->addWidget(infoWidget, 1);
+
+    previewLayout->addWidget(previewTitleLabel);
+    previewLayout->addLayout(previewContent);
+
+    // 整体纵向 Splitter：上三栏 + 下预览
+    QSplitter *mainSplitter = new QSplitter(Qt::Vertical, this);
+    mainSplitter->addWidget(topSplitter);
+    mainSplitter->addWidget(previewGroup);
+    mainSplitter->setStretchFactor(0, 3);
+    mainSplitter->setStretchFactor(1, 2);
+    mainSplitter->setChildrenCollapsible(false);
 
     // ==================== 状态栏 ====================
     statusLabel = new QLabel(this);
@@ -136,7 +238,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     mainLayout->setContentsMargins(16, 14, 16, 12);
     mainLayout->addLayout(headerLayout);
     mainLayout->addLayout(settingLayout);
-    mainLayout->addWidget(splitter, 1);
+    mainLayout->addWidget(mainSplitter, 1);
     mainLayout->addWidget(statusLabel);
 
     connect(saveButton, &QPushButton::clicked, this, [this]() { onSave(); });
@@ -159,10 +261,15 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     });
     connect(layoutCanvas, &ScreenLayoutCanvas::configChanged, this, [this]() {
         // 屏幕布局变化可能带来绑定关系增删（如从屏幕移除软件），
-        // 只需同步“已绑定”标记与拖拽能力，不重建清单以免选中项和滚动位置跳动
+        // 只需同步"已绑定"标记与拖拽能力，不重建清单以免选中项和滚动位置跳动
         if (libraryPanel != nullptr)
         {
             libraryPanel->refreshBindingMarks();
+        }
+        // 同时刷新右侧选中屏幕的软件清单
+        if (layoutCanvas != nullptr)
+        {
+            refreshScreenSoftwareList(layoutCanvas->selectedRow());
         }
         markDirty();
     });
@@ -170,29 +277,23 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
             [this](int screenRow, const QString &softwareId, int insertRow) {
                 onSoftwareDropped(screenRow, softwareId, insertRow);
             });
-    // 选中屏幕时同步高亮大屏（红色边框），方便多屏场景下定位当前编辑的屏幕
-    connect(layoutCanvas, &ScreenLayoutCanvas::screenSelected, this, [this](int row) {
-        if (m_config.screenList.size() > 0 && row >= 0 && row < m_config.screenList.size())
-        {
-            emit screenHighlightChanged(m_config.screenList[row].screenIndex);
-        }
-        else
-        {
-            emit screenHighlightChanged(0);
-        }
-    });
+    // 选中屏幕时同步高亮大屏（红色边框），并刷新右侧软件清单
+    connect(layoutCanvas, &ScreenLayoutCanvas::screenSelected, this, &ManagementWindow::onScreenSelected);
+    // 软件清单选中变化，更新底部预览
+    connect(libraryPanel, &SoftwareLibraryPanel::selectionChanged, this,
+            &ManagementWindow::onLibrarySelectionChanged);
+    // 右侧屏幕软件清单点击，更新底部预览
+    connect(screenSoftwareList, &QListWidget::itemClicked, this,
+            &ManagementWindow::onScreenSoftwareClicked);
 }
 
 void ManagementWindow::setConfig(const MultiScreenConfig &config)
 {
     m_config = config;
     m_config.count = m_config.screenList.size();
-    for (int i = 0; i < m_config.screenList.size(); i++)
-    {
-        m_config.screenList[i].screenIndex = i + 1;
-    }
+    // 注：屏幕序号 screenIndex 保留配置中的原值，由用户在界面上手动调整，不再按列表顺序重置
 
-    // 回填全局开关，阻塞信号避免触发“未保存”标记
+    // 回填全局开关，阻塞信号避免触发"未保存"标记
     const QList<QCheckBox *> checks = QList<QCheckBox *>() << showIndexCheck << sortScreenCheck << debugModeCheck
                                                            << runAsAdminCheck << disableWinKeyCheck
                                                            << stripAppBorderCheck << disableGpuAccelerationCheck;
@@ -214,6 +315,21 @@ void ManagementWindow::setConfig(const MultiScreenConfig &config)
 
     libraryPanel->setConfig(&m_config);
     layoutCanvas->setConfig(&m_config);
+    // 默认选中第一块屏，同步右侧软件清单和大屏高亮
+    if (m_config.screenList.size() > 0)
+    {
+        refreshScreenSoftwareList(0);
+        emit screenHighlightChanged(m_config.screenList[0].screenIndex);
+    }
+    else
+    {
+        refreshScreenSoftwareList(-1);
+    }
+    // 底部预览默认显示软件清单中第一个软件
+    if (libraryPanel != nullptr && !m_config.softwareList.isEmpty())
+    {
+        updateSoftwarePreview(m_config.softwareList.first().id);
+    }
     clearDirty();
 }
 
@@ -601,4 +717,154 @@ int ManagementWindow::boundScreenRow(const QString &softwareId) const
         }
     }
     return -1;
+}
+
+void ManagementWindow::onScreenSelected(int row)
+{
+    // 选中屏幕时更新大屏高亮
+    if (m_config.screenList.size() > 0 && row >= 0 && row < m_config.screenList.size())
+    {
+        emit screenHighlightChanged(m_config.screenList[row].screenIndex);
+    }
+    else
+    {
+        emit screenHighlightChanged(0);
+    }
+    // 刷新右侧选中屏幕的软件清单
+    refreshScreenSoftwareList(row);
+}
+
+void ManagementWindow::onLibrarySelectionChanged(const QString &softwareId)
+{
+    // 左侧软件清单选中变化，更新底部预览
+    updateSoftwarePreview(softwareId);
+}
+
+void ManagementWindow::onScreenSoftwareClicked(QListWidgetItem *item)
+{
+    if (item == nullptr)
+    {
+        return;
+    }
+    const QString softwareId = item->data(Qt::UserRole).toString();
+    updateSoftwarePreview(softwareId);
+}
+
+void ManagementWindow::refreshScreenSoftwareList(int screenRow)
+{
+    if (screenSoftwareList == nullptr)
+    {
+        return;
+    }
+    screenSoftwareList->clear();
+    if (screenRow < 0 || screenRow >= m_config.screenList.size())
+    {
+        screenListTitle->setText(QString::fromUtf8("选中屏幕的软件"));
+        return;
+    }
+    const ScreenConfig &screen = m_config.screenList[screenRow];
+    screenListTitle->setText(QString::fromUtf8("%1号屏的软件").arg(screen.screenIndex));
+
+    for (int i = 0; i < screen.assignments.size(); i++)
+    {
+        const ScreenAssignment &assignment = screen.assignments[i];
+        const SoftwareItem *item = findSoftware(assignment.softwareId);
+        QListWidgetItem *listItem = new QListWidgetItem(screenSoftwareList);
+        listItem->setData(Qt::UserRole, assignment.softwareId);
+        const QString name = item != nullptr ? item->name : assignment.softwareId;
+        listItem->setText(QString("%1. %2").arg(i + 1).arg(name));
+        // 预览图标
+        if (item != nullptr && !item->previewPath.isEmpty())
+        {
+            QPixmap pix(item->previewPath);
+            if (!pix.isNull())
+            {
+                listItem->setIcon(QIcon(pix.scaled(64, 36, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+            }
+        }
+        const QString tabName = assignment.tabName.isEmpty() ? name : assignment.tabName;
+        listItem->setToolTip(QString::fromUtf8("标签名称：%1\n软件：%2").arg(tabName).arg(name));
+        listItem->setSizeHint(QSize(0, 42));
+        screenSoftwareList->addItem(listItem);
+    }
+}
+
+void ManagementWindow::updateSoftwarePreview(const QString &softwareId)
+{
+    if (softwareId.isEmpty())
+    {
+        m_currentPreviewId.clear();
+        previewImageLabel->clear();
+        previewImageLabel->setText(QString::fromUtf8("暂无预览图"));
+        previewNameLabel->setText(QString());
+        previewTypeLabel->setText(QString());
+        previewPathLabel->setText(QString());
+        previewWindowTitleLabel->setText(QString());
+        previewRemarkLabel->setText(QString());
+        return;
+    }
+    const SoftwareItem *item = findSoftware(softwareId);
+    if (item == nullptr)
+    {
+        return;
+    }
+    m_currentPreviewId = softwareId;
+
+    // 预览图
+    if (!item->previewPath.isEmpty())
+    {
+        QPixmap pix(item->previewPath);
+        if (!pix.isNull())
+        {
+            previewImageLabel->setPixmap(pix.scaled(previewImageLabel->size(), Qt::KeepAspectRatio,
+                                                    Qt::SmoothTransformation));
+        }
+        else
+        {
+            previewImageLabel->clear();
+            previewImageLabel->setText(QString::fromUtf8("预览图加载失败"));
+        }
+    }
+    else
+    {
+        previewImageLabel->clear();
+        previewImageLabel->setText(QString::fromUtf8("暂无预览图"));
+    }
+
+    // 名称与类型
+    previewNameLabel->setText(item->name);
+    QString typeText;
+    if (item->type == QLatin1String("desktop"))
+    {
+        typeText = QString::fromUtf8("桌面应用");
+    }
+    else if (item->type == QLatin1String("web"))
+    {
+        typeText = QString::fromUtf8("网页");
+    }
+    else if (item->type == QLatin1String("ppt"))
+    {
+        typeText = QString::fromUtf8("演示文稿");
+    }
+    else
+    {
+        typeText = item->type;
+    }
+    // 已绑定屏幕信息
+    const int bindRow = boundScreenRow(softwareId);
+    if (bindRow >= 0 && bindRow < m_config.screenList.size())
+    {
+        typeText += QString::fromUtf8(" · 已绑定 %1 号屏").arg(m_config.screenList[bindRow].screenIndex);
+    }
+    previewTypeLabel->setText(typeText);
+
+    // 路径 / URL
+    previewPathLabel->setText(item->path.isEmpty() ? QString::fromUtf8("（未设置）") : item->path);
+
+    // 窗口标题
+    previewWindowTitleLabel->setText(
+        item->windowTitle.isEmpty() ? QString::fromUtf8("（未设置）") : item->windowTitle);
+
+    // 备注
+    previewRemarkLabel->setText(item->remark.isEmpty() ? QString::fromUtf8("（无）") : item->remark);
 }
