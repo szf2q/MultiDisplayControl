@@ -201,7 +201,13 @@ class ManagementWindow : public QWidget
     int boundScreenRow(const QString &softwareId) const;
 
     /**
-     * @brief 刷新右侧选中屏幕的软件清单
+     * @brief 更新左下软件预览区
+     * @param softwareId 软件 id，为空时清空预览
+     */
+    void updateSoftwarePreview(const QString &softwareId);
+
+    /**
+     * @brief 刷新中间选中屏幕的软件清单
      * @param screenRow 屏幕行号
      */
     void refreshScreenSoftwareList(int screenRow);
@@ -232,12 +238,24 @@ class ManagementWindow : public QWidget
     QPushButton *reloadButton = nullptr;
     QPushButton *closeButton = nullptr;
 
-    SoftwareLibraryPanel *libraryPanel = nullptr;
+    // 布局：左4(上屏幕布局 + 下软件预览) / 中1(选中屏软件) / 右1(总软件清单)
     ScreenLayoutCanvas *layoutCanvas = nullptr;
 
-    // 右侧选中屏幕的软件清单
+    // 左下软件预览
+    QLabel *previewTitleLabel = nullptr;
+    QLabel *previewImageLabel = nullptr;
+    QLabel *previewNameLabel = nullptr;
+    QLabel *previewTypeLabel = nullptr;
+    QLabel *previewPathLabel = nullptr;
+    QLabel *previewWindowTitleLabel = nullptr;
+    QLabel *previewRemarkLabel = nullptr;
+
+    // 中间：选中屏幕的软件清单
     QLabel *screenListTitle = nullptr;
     QListWidget *screenSoftwareList = nullptr;
+
+    // 右侧：总软件清单
+    SoftwareLibraryPanel *libraryPanel = nullptr;
 };
 
 #endif  // MANAGEMENTWINDOW_H

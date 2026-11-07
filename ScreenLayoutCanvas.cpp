@@ -97,18 +97,16 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
         const QRectF targetRect = screenDisplayRect(i, bounding, scale, baseOffset);
         const QString &displayName = screens[i]->name();
         const bool selected = (!m_selected.isEmpty() && displayName == m_selected);
-        const bool primary = (screens[i] == QGuiApplication::primaryScreen());
-        const QRect geometry = screens[i]->geometry();
 
-        // 选中态：青色边框 + 青色背景（与下方屏幕卡片选中色一致，红色仅用于实际大屏高亮）
+        // 只画屏幕框：选中态青色边框，普通态灰蓝色边框，内部深色填充
         const QColor fillColor = selected ? QColor(18, 82, 130) : QColor(20, 46, 78);
         const QColor borderColor = selected ? QColor(17, 192, 254) : QColor(48, 92, 140);
         const qreal borderWidth = selected ? 3.0 : 1.5;
         painter.setBrush(fillColor);
         painter.setPen(QPen(borderColor, borderWidth));
-        painter.drawRoundedRect(targetRect.adjusted(1, 1, -1, -1), 8, 8);
+        painter.drawRoundedRect(targetRect.adjusted(1, 1, -1, -1), 6, 6);
 
-        // 左上角序号徽标：从配置中查找该物理屏对应的屏幕序号
+        // 左上角序号徽标
         int screenIndex = 0;
         if (m_config != nullptr)
         {
@@ -123,68 +121,37 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
         }
         if (screenIndex > 0)
         {
-            const qreal badgeW = 32;
-            const qreal badgeH = 22;
+            const qreal badgeW = 30;
+            const qreal badgeH = 20;
             const QRectF badgeRect(targetRect.left() + 8, targetRect.top() + 8, badgeW, badgeH);
             painter.setBrush(selected ? QColor(17, 192, 254) : QColor(48, 92, 140));
             painter.setPen(Qt::NoPen);
             painter.drawRoundedRect(badgeRect, 4, 4);
             QFont badgeFont = painter.font();
             badgeFont.setFamily(QString::fromUtf8("微软雅黑"));
-            badgeFont.setPixelSize(13);
+            badgeFont.setPixelSize(12);
             badgeFont.setBold(true);
             painter.setFont(badgeFont);
             painter.setPen(QColor(255, 255, 255));
             painter.drawText(badgeRect, Qt::AlignCenter, QString::number(screenIndex));
         }
 
+        // 屏幕名称居中显示
         QFont font = painter.font();
         font.setFamily(QString::fromUtf8("微软雅黑"));
-        font.setPixelSize(13);
-        font.setBold(selected || primary);
+        font.setPixelSize(12);
         painter.setFont(font);
-        painter.setPen(selected || primary ? QColor(220, 240, 255) : QColor(170, 195, 220));
-        const QString text = QString("%1%2\n%3×%4")
-                                 .arg(displayName)
-                                 .arg(primary ? QString::fromUtf8("（主屏）") : QString())
-                                 .arg(geometry.width())
-                                 .arg(geometry.height());
-        painter.drawText(targetRect, Qt::AlignCenter, text);
+        painter.setPen(selected ? QColor(220, 240, 255) : QColor(170, 195, 220));
+        painter.drawText(targetRect, Qt::AlignCenter, displayName);
 
-        // 显示该屏分配的软件数量（底部居中）
-        if (m_config != nullptr)
-        {
-            int assignCount = 0;
-            for (int j = 0; j < m_config->screenList.size(); j++)
-            {
-                if (m_config->screenList[j].displayName == displayName)
-                {
-                    assignCount = m_config->screenList[j].assignments.size();
-                    break;
-                }
-            }
-            if (assignCount > 0)
-            {
-                QFont countFont = painter.font();
-                countFont.setFamily(QString::fromUtf8("微软雅黑"));
-                countFont.setPixelSize(11);
-                painter.setFont(countFont);
-                painter.setPen(QColor(140, 170, 200));
-                const QString countText = QString::fromUtf8("%1 个应用").arg(assignCount);
-                const QRectF countRect(targetRect.left(), targetRect.bottom() - 22, targetRect.width(), 16);
-                painter.drawText(countRect, Qt::AlignCenter, countText);
-            }
-        }
-
-        // 右下角调整大小手柄（仅选中态显示，便于识别当前操作的屏幕）
+        // 右下角调整大小手柄（仅选中态显示）
         if (selected)
         {
             const int handleSize = 12;
-            const QRectF handleRect(targetRect.right() - handleSize - 2, targetRect.bottom() - handleSize - 2,
+            const QRectF handleRect(targetRect.right() - handleSize - 3, targetRect.bottom() - handleSize - 3,
                                     handleSize, handleSize);
             painter.setPen(Qt::NoPen);
             painter.setBrush(QColor(17, 192, 254));
-            // 绘制小三角形手柄
             QPainterPath path;
             path.moveTo(handleRect.bottomRight());
             path.lineTo(handleRect.bottomLeft());
@@ -293,16 +260,28 @@ void PhysicalScreenMap::mouseMoveEvent(QMouseEvent *event)
     }
     else if (m_dragMode == DragResize && m_dragIndex >= 0)
     {
-        // 调整大小：右下角拖拽，最小尺寸 80×60
+        // 调整大小：右下角拖拽，固定 16:9 比例，最小宽度 160
         const QList<QScreen *> screens = QGuiApplication::screens();
         if (m_dragIndex < screens.size())
         {
             const QString &name = screens[m_dragIndex]->name();
             const int dx = event->pos().x() - m_dragStartPos.x();
             const int dy = event->pos().y() - m_dragStartPos.y();
-            const int newW = qMax(80, m_dragStartSize.width() + dx);
-            const int newH = qMax(60, m_dragStartSize.height() + dy);
-            m_customSizes[name] = QSize(newW, newH);
+            // 以水平拖拽为主，宽度变化决定高度变化（16:9）
+            // 同时考虑垂直方向的输入，取两者换算后较大的那个
+            int newW = qMax(160, m_dragStartSize.width() + dx);
+            int newHfromW = qMax(90, qRound(newW * 9.0 / 16.0));
+            int newHfromDy = qMax(90, m_dragStartSize.height() + dy);
+            int newWfromH = qMax(160, qRound(newHfromDy * 16.0 / 9.0));
+            // 取两种换算中尺寸较大的一组（用户拖拽方向决定）
+            if (newW >= newWfromH)
+            {
+                m_customSizes[name] = QSize(newW, newHfromW);
+            }
+            else
+            {
+                m_customSizes[name] = QSize(newWfromH, newHfromDy);
+            }
             update();
         }
     }
