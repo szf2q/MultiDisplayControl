@@ -296,6 +296,12 @@ bool ConfigStore::loadFromJson(const QString &filePath, MultiScreenConfig *confi
                                 geometry.value(QStringLiteral("width")).toInt(0),
                                 geometry.value(QStringLiteral("height")).toInt(0));
         screen.primaryScreen = object.value(QStringLiteral("primary")).toBool(false);
+        // 示意图布局：旧配置没有该字段时保持 0，界面按自动排布显示
+        const QJsonObject layout = object.value(QStringLiteral("layout")).toObject();
+        screen.layoutX = layout.value(QStringLiteral("x")).toDouble(0.0);
+        screen.layoutY = layout.value(QStringLiteral("y")).toDouble(0.0);
+        screen.layoutWidth = layout.value(QStringLiteral("width")).toDouble(0.0);
+        screen.layoutHeight = layout.value(QStringLiteral("height")).toDouble(0.0);
         screen.showIndex = config->showIndex;
         screen.sortScreen = config->sortScreen;
         screen.debugMode = config->debugMode;
@@ -449,6 +455,14 @@ QJsonObject ConfigStore::screenToJson(const ScreenConfig &screen)
     geometry.insert(QStringLiteral("height"), screen.geometry.height());
     object.insert(QStringLiteral("geometry"), geometry);
     object.insert(QStringLiteral("primary"), screen.primaryScreen);
+
+    // 示意图布局比例：只影响管理界面显示，运行时读取后不使用
+    QJsonObject layout;
+    layout.insert(QStringLiteral("x"), screen.layoutX);
+    layout.insert(QStringLiteral("y"), screen.layoutY);
+    layout.insert(QStringLiteral("width"), screen.layoutWidth);
+    layout.insert(QStringLiteral("height"), screen.layoutHeight);
+    object.insert(QStringLiteral("layout"), layout);
 
     QJsonArray apps;
     for (int i = 0; i < screen.assignments.size(); i++)

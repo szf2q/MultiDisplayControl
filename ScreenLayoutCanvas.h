@@ -50,12 +50,36 @@ class PhysicalScreenMap : public QWidget
      */
     void refresh();
 
+    /**
+     * @brief 计算每块物理屏当前的绘制矩形
+     *
+     * 统一高度、按各屏实际分辨率的长宽比计算宽度并整体居中；
+     * 配置中存在手动布局比例时优先使用该比例，再叠加本次拖拽的临时偏移与尺寸。
+     *
+     * @return 与 QGuiApplication::screens() 顺序一致的矩形列表，空间不足时返回空列表
+     */
+    QList<QRectF> screenRects() const;
+
+    /**
+     * @brief 清空鼠标拖拽产生的临时偏移与尺寸
+     *
+     * 调用后示意图改为按配置中保存的归一化比例还原，用于拖拽结束写入配置后收尾。
+     */
+    void clearCustomLayout();
+
   signals:
     /**
      * @brief 点击了某块物理屏
      * @param displayName 物理屏名称（QScreen::name()）
      */
     void screenClicked(const QString &displayName);
+
+    /**
+     * @brief 鼠标拖拽调整位置或大小结束
+     *
+     * 由外部把当前矩形换算成比例写入配置并标记未保存。
+     */
+    void layoutChanged();
 
   protected:
     /**
@@ -94,17 +118,6 @@ class PhysicalScreenMap : public QWidget
     };
 
     /**
-     * @brief 计算每块物理屏的绘制矩形
-     *
-     * 统一高度、按各屏实际分辨率的长宽比计算各自宽度，所有矩形整体水平垂直居中。
-     * 高度同时受控件高度与总宽度约束，保证多屏时不溢出；
-     * 计算完成后叠加用户拖拽自定义的偏移与大小。
-     *
-     * @return 与 QGuiApplication::screens() 顺序一致的矩形列表，空间不足时返回空列表
-     */
-    QList<QRectF> screenRects() const;
-
-    /**
      * @brief 根据鼠标位置计算命中的物理屏下标
      * @param pos 鼠标坐标（相对本控件）
      * @return 物理屏在 QGuiApplication::screens() 中的下标，未命中返回 -1
@@ -131,6 +144,8 @@ class PhysicalScreenMap : public QWidget
     QPoint m_dragStartPos;
     /** 拖拽起始时的显示矩形，缩放时用于换算长宽比与最小/最大尺寸 */
     QRectF m_dragStartRect;
+    /** 本次拖拽是否真的产生过位移，用于区分单击选中与拖动调整 */
+    bool m_dragMoved = false;
     /** 拖拽起始时该屏的自定义偏移，拖动时在此基础上累加 */
     QPoint m_dragStartCustomOffset;
     /**
@@ -426,6 +441,11 @@ class ScreenLayoutCanvas : public QWidget
      * @param row 行号
      */
     void onSelectScreen(int row);
+
+    /**
+     * @brief 示意图拖拽调整结束：把各屏当前矩形换算成比例写入配置并通知未保存
+     */
+    void onLayoutChanged();
 
     /**
      * @brief 物理屏示意图上点击了某块物理屏，同步选中对应屏幕卡片

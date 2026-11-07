@@ -101,6 +101,20 @@ struct ScreenConfig
     int tabOffsetX = 0;
     /** 是否去掉被嵌入桌面应用的标题栏与边框，使客户区铺满整块屏幕 */
     bool stripAppBorder = false;
+    /**
+     * @brief 管理界面屏幕布局示意图中的显示矩形（相对示意图宽高的比例，取值 0~1）
+     *
+     * x、y 为矩形左上角在示意图中的比例位置，width、height 为矩形宽高占示意图
+     * 宽高的比例，宽高比与物理屏分辨率一致。四项全为 0 表示未手动调整，
+     * 示意图按控件空间自动排布。
+     *
+     * 这些值只影响管理界面的布局示意，不改变真实屏幕的位置与分辨率；
+     * 保存后重启管理界面按比例还原，换窗口尺寸时整体等比缩放。
+     */
+    qreal layoutX = 0.0;
+    qreal layoutY = 0.0;
+    qreal layoutWidth = 0.0;
+    qreal layoutHeight = 0.0;
     /** 软件分配列表，顺序即标签顺序 */
     QList<ScreenAssignment> assignments;
     /** 运行时应用列表，由 assignments 解析生成 */

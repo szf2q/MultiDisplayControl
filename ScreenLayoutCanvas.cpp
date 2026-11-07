@@ -100,8 +100,28 @@ QList<QRectF> PhysicalScreenMap::screenRects() const
     {
         const double rectW = ratios[i] * rectH;
         QRectF rect(x, startY, rectW, rectH);
-        // 叠加用户拖拽产生的自定义偏移与尺寸，仅影响示意图显示，不改动配置
         const QString &displayName = screens[i]->name();
+
+        // 配置中保存过手动布局时优先按比例还原，保证重启后位置与大小一致
+        if (m_config != nullptr)
+        {
+            for (int j = 0; j < m_config->screenList.size(); j++)
+            {
+                const ScreenConfig &screen = m_config->screenList[j];
+                if (screen.displayName != displayName)
+                {
+                    continue;
+                }
+                if (screen.layoutWidth > 0.0 && screen.layoutHeight > 0.0)
+                {
+                    rect.setRect(screen.layoutX * width(), screen.layoutY * height(),
+                                 screen.layoutWidth * width(), screen.layoutHeight * height());
+                }
+                break;
+            }
+        }
+
+        // 叠加本次拖拽产生的临时偏移与尺寸，松开鼠标后会换算成比例写回配置
         rect.translate(m_customOffsets.value(displayName, QPoint(0, 0)));
         if (m_customSizes.contains(displayName))
         {
@@ -117,10 +137,18 @@ QList<QRectF> PhysicalScreenMap::screenRects() const
     return rects;
 }
 
+void PhysicalScreenMap::clearCustomLayout()
+{
+    m_customOffsets.clear();
+    m_customSizes.clear();
+    update();
+}
+
 void PhysicalScreenMap::setConfig(MultiScreenConfig *config)
 {
     m_config = config;
-    update();
+    // 重新载入配置时丢弃上一轮拖拽的临时状态，完全按配置中的比例还原
+    clearCustomLayout();
 }
 
 void PhysicalScreenMap::setSelectedScreen(const QString &displayName)
@@ -286,6 +314,7 @@ void PhysicalScreenMap::mousePressEvent(QMouseEvent *event)
             m_dragIndex = resizeIdx;
             m_dragStartPos = event->pos();
             m_dragStartRect = rects[resizeIdx];
+            m_dragMoved = false;
             setCursor(Qt::SizeFDiagCursor);
             // 缩放前先选中该屏，手柄与卡片内容随之切换
             emit screenClicked(screens[resizeIdx]->name());
@@ -301,6 +330,7 @@ void PhysicalScreenMap::mousePressEvent(QMouseEvent *event)
             m_dragIndex = idx;
             m_dragStartPos = event->pos();
             m_dragStartRect = rects[idx];
+            m_dragMoved = false;
             m_dragStartCustomOffset = m_customOffsets.value(name, QPoint(0, 0));
             setCursor(Qt::ClosedHandCursor);
             emit screenClicked(name);
@@ -319,6 +349,10 @@ void PhysicalScreenMap::mouseMoveEvent(QMouseEvent *event)
         // 拖动位置：以起始矩形左上角为基准累加鼠标位移，并限制在控件范围内
         const QString &name = screens[m_dragIndex]->name();
         const QPoint delta = event->pos() - m_dragStartPos;
+        if (delta.manhattanLength() > 0)
+        {
+            m_dragMoved = true;
+        }
         QPointF topLeft = m_dragStartRect.topLeft() + QPointF(delta.x(), delta.y());
         const double maxX = qMax(0.0, width() - m_dragStartRect.width());
         const double maxY = qMax(0.0, height() - m_dragStartRect.height());
@@ -339,6 +373,10 @@ void PhysicalScreenMap::mouseMoveEvent(QMouseEvent *event)
                                   ? m_dragStartRect.width() / m_dragStartRect.height()
                                   : 16.0 / 9.0;
         const QPoint delta = event->pos() - m_dragStartPos;
+        if (delta.manhattanLength() > 0)
+        {
+            m_dragMoved = true;
+        }
         double newWidth = (qAbs(delta.x()) >= qAbs(delta.y()))
                               ? m_dragStartRect.width() + delta.x()
                               : (m_dragStartRect.height() + delta.y()) * aspect;
@@ -373,9 +411,16 @@ void PhysicalScreenMap::mouseReleaseEvent(QMouseEvent *event)
 {
     if (m_dragMode != DragNone)
     {
+        const bool adjusted = (m_dragIndex >= 0 && m_dragMoved);
         m_dragMode = DragNone;
         m_dragIndex = -1;
+        m_dragMoved = false;
         setCursor(Qt::PointingHandCursor);
+        // 拖拽结束通知外部把当前矩形写入配置，避免只在内存生效、重启后丢失
+        if (adjusted)
+        {
+            emit layoutChanged();
+        }
     }
     QWidget::mouseReleaseEvent(event);
 }
@@ -662,6 +707,9 @@ ScreenLayoutCanvas::ScreenLayoutCanvas(QWidget *parent) : QWidget(parent)
     // 点击物理屏示意图上的屏幕，同步选中对应的屏幕配置卡片
     connect(screenMap, &PhysicalScreenMap::screenClicked, this,
             &ScreenLayoutCanvas::onScreenMapClicked);
+    // 拖拽调整位置/大小结束后把布局比例写回配置，保证保存并重启后仍能还原
+    connect(screenMap, &PhysicalScreenMap::layoutChanged, this,
+            &ScreenLayoutCanvas::onLayoutChanged);
 
     // 卡片容器由管理界面中间栏承载（列表上方），画布自身只保留物理屏示意图
     cardContainer = new QWidget();
@@ -847,6 +895,47 @@ int ScreenLayoutCanvas::selectedRow() const
 QWidget *ScreenLayoutCanvas::cardsWidget() const
 {
     return cardContainer;
+}
+
+void ScreenLayoutCanvas::onLayoutChanged()
+{
+    if (m_config == nullptr || screenMap == nullptr)
+    {
+        return;
+    }
+    const int mapWidth = screenMap->width();
+    const int mapHeight = screenMap->height();
+    if (mapWidth <= 0 || mapHeight <= 0)
+    {
+        return;
+    }
+
+    const QList<QRectF> rects = screenMap->screenRects();
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    const int count = qMin(rects.size(), screens.size());
+    for (int i = 0; i < count; i++)
+    {
+        const QString &displayName = screens[i]->name();
+        for (int j = 0; j < m_config->screenList.size(); j++)
+        {
+            ScreenConfig &screen = m_config->screenList[j];
+            if (screen.displayName != displayName)
+            {
+                continue;
+            }
+            // 换算成相对示意图宽高的比例，窗口尺寸变化后按同比例还原
+            const QRectF &rect = rects[i];
+            screen.layoutX = rect.x() / mapWidth;
+            screen.layoutY = rect.y() / mapHeight;
+            screen.layoutWidth = rect.width() / mapWidth;
+            screen.layoutHeight = rect.height() / mapHeight;
+            break;
+        }
+    }
+
+    // 比例已写入配置，清空临时拖拽状态，后续绘制与保存都直接使用配置值
+    screenMap->clearCustomLayout();
+    emit configChanged();
 }
 
 void ScreenLayoutCanvas::onSelectScreen(int row)
