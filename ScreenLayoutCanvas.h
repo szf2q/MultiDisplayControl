@@ -7,10 +7,10 @@
 
 #include "ScreenConfig.h"
 
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QPushButton;
-class QScrollArea;
 class QSpinBox;
 
 /**
@@ -201,12 +201,6 @@ class ScreenCard : public QFrame
     void setRow(int row);
 
     /**
-     * @brief 设置卡片选中态样式
-     * @param selected 是否选中
-     */
-    void setSelected(bool selected);
-
-    /**
      * @brief 获取当前分配列表中的软件 id 顺序
      * @return 软件 id 列表
      */
@@ -305,9 +299,10 @@ class ScreenCard : public QFrame
 /**
  * @brief 屏幕布局画布
  *
- * 组合物理屏示意图与屏幕卡片列表，负责维护配置中的屏幕序号、
- * 绑定关系、屏幕名称与软件分配。屏幕由物理屏自动获取，不可手动增删；
- * 屏幕序号可手动设置，卡片按序号排序显示。
+ * 绘制物理屏示意图，并维护配置中的屏幕序号、绑定关系、屏幕名称与软件分配。
+ * 屏幕由物理屏自动获取，不可手动增删；屏幕序号可手动设置，卡片按序号排序。
+ * 屏幕配置卡片由本类创建但不在画布内展示，通过 cardsWidget() 交给管理界面
+ * 中间栏承载（显示在「x号屏的软件」清单上方），卡片只展示当前选中的屏幕。
  */
 class ScreenLayoutCanvas : public QWidget
 {
@@ -336,6 +331,16 @@ class ScreenLayoutCanvas : public QWidget
      * @return 行号，未选中返回 -1
      */
     int selectedRow() const;
+
+    /**
+     * @brief 获取屏幕配置卡片的承载容器
+     *
+     * 容器由本类创建并在 refresh() 中重建内部卡片，调用方只负责把它放进布局；
+     * 容器内始终只有一个可见卡片（当前选中的屏幕），其余卡片隐藏。
+     *
+     * @return 卡片容器控件，始终非空
+     */
+    QWidget *cardsWidget() const;
 
   signals:
     /**
@@ -414,8 +419,10 @@ class ScreenLayoutCanvas : public QWidget
 
     MultiScreenConfig *m_config = nullptr;
     PhysicalScreenMap *screenMap = nullptr;
-    QScrollArea *cardScroll = nullptr;
+    /** 卡片容器，由外部界面承载，refresh() 只重建其内部卡片 */
     QWidget *cardContainer = nullptr;
+    /** 卡片容器的布局，refresh() 用于清空并重新填充卡片 */
+    QHBoxLayout *m_cardLayout = nullptr;
     QList<ScreenCard *> m_cards;
     int m_selectedRow = -1;
 };

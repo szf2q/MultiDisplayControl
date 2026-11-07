@@ -84,11 +84,6 @@ QFrame#screenCard {
     border-radius: 12px;
 }
 
-QFrame#screenCard[selected="true"] {
-    border: 2px solid #11c0fe;
-    background: #12304f;
-}
-
 QLineEdit, QSpinBox, QComboBox {
     background: #0a1c31;
     border: 1px solid #26507d;

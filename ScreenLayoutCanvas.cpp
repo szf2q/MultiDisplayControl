@@ -20,7 +20,6 @@
 #include <QPainterPath>
 #include <QPushButton>
 #include <QScreen>
-#include <QScrollArea>
 #include <QSpinBox>
 #include <QStyle>
 #include <QVBoxLayout>
@@ -358,10 +357,11 @@ void AppAssignmentList::onContextMenu(const QPoint &pos)
 ScreenCard::ScreenCard(int row, QWidget *parent) : QFrame(parent), m_row(row)
 {
     setObjectName(QStringLiteral("screenCard"));
-    setProperty("selected", false);
     setAcceptDrops(true);
-    setMinimumWidth(250);
-    setMaximumWidth(310);
+    // 卡片由中间栏承载，宽度随中间栏伸缩，下限保证「序号 + 名称」一行仍可编辑
+    setMinimumWidth(180);
+    setMaximumWidth(340);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     // 序号输入框：可手动设置屏幕序号，范围 1~99
     indexSpin = new QSpinBox(this);
@@ -484,20 +484,11 @@ void ScreenCard::setScreen(int row, const ScreenConfig &screen, const MultiScree
         item->setData(Qt::UserRole, assignment.softwareId);
         item->setSizeHint(QSize(0, 34));
     }
-    setSelected(property("selected").toBool());
 }
 
 void ScreenCard::setRow(int row)
 {
     m_row = row;
-}
-
-void ScreenCard::setSelected(bool selected)
-{
-    setProperty("selected", selected);
-    style()->unpolish(this);
-    style()->polish(this);
-    update();
 }
 
 QStringList ScreenCard::assignmentIds() const
@@ -524,28 +515,19 @@ void ScreenCard::dropEvent(QDropEvent *event)
 ScreenLayoutCanvas::ScreenLayoutCanvas(QWidget *parent) : QWidget(parent)
 {
     screenMap = new PhysicalScreenMap(this);
-    // 点击物理屏示意图上的屏幕，同步选中下方对应的屏幕卡片
+    // 点击物理屏示意图上的屏幕，同步选中对应的屏幕配置卡片
     connect(screenMap, &PhysicalScreenMap::screenClicked, this,
             &ScreenLayoutCanvas::onScreenMapClicked);
 
+    // 卡片容器由管理界面中间栏承载（列表上方），画布自身只保留物理屏示意图
     cardContainer = new QWidget();
-    QHBoxLayout *cardLayout = new QHBoxLayout(cardContainer);
-    cardLayout->setContentsMargins(0, 0, 0, 0);
-    cardLayout->setSpacing(12);
-    cardLayout->addStretch(1);
+    m_cardLayout = new QHBoxLayout(cardContainer);
+    m_cardLayout->setContentsMargins(0, 0, 0, 0);
+    m_cardLayout->setSpacing(12);
 
-    cardScroll = new QScrollArea(this);
-    cardScroll->setWidgetResizable(true);
-    cardScroll->setFrameShape(QFrame::NoFrame);
-    cardScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    cardScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    cardScroll->setWidget(cardContainer);
-
-    // 添加/删除入口统一由外部（管理界面顶部操作区）与屏幕卡片提供，此处不再放置按钮
     QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->addWidget(screenMap);
-    mainLayout->addWidget(cardScroll, 1);
+    mainLayout->addWidget(screenMap, 1);
 
     if (qApp != nullptr)
     {
@@ -584,18 +566,18 @@ void ScreenLayoutCanvas::setConfig(MultiScreenConfig *config)
 
 void ScreenLayoutCanvas::refresh()
 {
-    // 整块卡片区重建：屏幕配置变化后统一按配置重新生成，避免局部状态不一致
-    QWidget *oldContainer = cardScroll->takeWidget();
-    if (oldContainer != nullptr)
-    {
-        oldContainer->deleteLater();
-    }
+    // 卡片容器由外部界面持有，这里只清空并重建容器内的卡片，避免外部布局失效
     m_cards.clear();
-
-    cardContainer = new QWidget();
-    QHBoxLayout *cardLayout = new QHBoxLayout(cardContainer);
-    cardLayout->setContentsMargins(0, 0, 0, 0);
-    cardLayout->setSpacing(12);
+    while (QLayoutItem *item = m_cardLayout->takeAt(0))
+    {
+        if (item->widget() != nullptr)
+        {
+            // 先从布局摘下并隐藏，再延迟销毁，防止旧卡片在新卡片生成前残留在界面上
+            item->widget()->hide();
+            item->widget()->deleteLater();
+        }
+        delete item;
+    }
 
     if (m_config != nullptr)
     {
@@ -603,7 +585,9 @@ void ScreenLayoutCanvas::refresh()
         {
             ScreenCard *card = new ScreenCard(i, cardContainer);
             card->setScreen(i, m_config->screenList[i], m_config);
-            cardLayout->addWidget(card);
+            // 默认隐藏，由 onSelectScreen 只显示当前选中屏幕的卡片
+            card->setVisible(false);
+            m_cardLayout->addWidget(card, 1);
             m_cards.append(card);
 
             connect(card, &ScreenCard::indexChanged, this, &ScreenLayoutCanvas::onIndexChanged);
@@ -668,8 +652,6 @@ void ScreenLayoutCanvas::refresh()
             });
         }
     }
-    cardLayout->addStretch(1);
-    cardScroll->setWidget(cardContainer);
 
     if (m_config != nullptr && m_selectedRow >= 0 && m_selectedRow < m_cards.size())
     {
@@ -718,6 +700,11 @@ int ScreenLayoutCanvas::selectedRow() const
     return m_selectedRow;
 }
 
+QWidget *ScreenLayoutCanvas::cardsWidget() const
+{
+    return cardContainer;
+}
+
 void ScreenLayoutCanvas::onSelectScreen(int row)
 {
     if (m_config == nullptr || row < 0 || row >= m_config->screenList.size())
@@ -725,9 +712,10 @@ void ScreenLayoutCanvas::onSelectScreen(int row)
         return;
     }
     m_selectedRow = row;
+    // 中间栏只展示当前屏幕的配置卡片：切换屏幕即换卡片内容，卡片本身不做选中态高亮
     for (int i = 0; i < m_cards.size(); i++)
     {
-        m_cards[i]->setSelected(i == row);
+        m_cards[i]->setVisible(i == row);
     }
     if (screenMap != nullptr)
     {

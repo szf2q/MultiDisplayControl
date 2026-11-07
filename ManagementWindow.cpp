@@ -211,10 +211,18 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     screenSoftwareList->setSelectionMode(QAbstractItemView::SingleSelection);
     screenSoftwareList->setIconSize(QSize(64, 36));
     screenListLayout->addWidget(screenListTitle);
+    // 屏幕配置卡片（序号、名称、物理屏信息、标签栏偏移）放在软件清单上方，
+    // 只展示当前选中屏幕的卡片，随屏幕切换刷新内容
+    QWidget *screenCardHost = layoutCanvas->cardsWidget();
+    if (screenCardHost != nullptr)
+    {
+        screenCardHost->setParent(screenListGroup);
+        screenListLayout->addWidget(screenCardHost);
+    }
     screenListLayout->addWidget(screenSoftwareList, 1);
     // 限制中间屏幕软件清单的宽度范围，避免子控件撑宽
-    screenListGroup->setMaximumWidth(240);
-    screenListGroup->setMinimumWidth(150);
+    screenListGroup->setMaximumWidth(280);
+    screenListGroup->setMinimumWidth(180);
 
     // 右侧：总软件清单
     libraryPanel = new SoftwareLibraryPanel(this);
