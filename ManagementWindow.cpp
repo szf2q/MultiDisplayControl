@@ -4,6 +4,7 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QCursor>
+#include <QEvent>
 #include <QFile>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -129,6 +130,10 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     previewImageLabel = new QLabel(previewGroup);
     previewImageLabel->setAlignment(Qt::AlignCenter);
     previewImageLabel->setMinimumSize(QSize(200, 130));
+    // 尺寸策略设为可扩展，避免图片按 sizeHint 固定成小尺寸
+    previewImageLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    // 监听尺寸变化，在布局确定后按实际大小重新缩放预览图
+    previewImageLabel->installEventFilter(this);
     previewImageLabel->setStyleSheet(QStringLiteral(
         "QLabel { background-color: #0f1f36; border: 1px solid #28507d; "
         "border-radius: 6px; color: #6d8cb0; }"));
@@ -827,6 +832,7 @@ void ManagementWindow::updateSoftwarePreview(const QString &softwareId)
 {
     if (softwareId.isEmpty())
     {
+        m_previewSourcePixmap = QPixmap();
         previewImageLabel->clear();
         previewImageLabel->setText(QString::fromUtf8("暂无预览图"));
         previewNameLabel->setText(QString());
@@ -848,17 +854,20 @@ void ManagementWindow::updateSoftwarePreview(const QString &softwareId)
         QPixmap pix(item->previewPath);
         if (!pix.isNull())
         {
-            previewImageLabel->setPixmap(pix.scaled(previewImageLabel->size(), Qt::KeepAspectRatio,
-                                                    Qt::SmoothTransformation));
+            // 保留原图，交由 applyPreviewPixmap 按标签实际尺寸缩放
+            m_previewSourcePixmap = pix;
+            applyPreviewPixmap();
         }
         else
         {
+            m_previewSourcePixmap = QPixmap();
             previewImageLabel->clear();
             previewImageLabel->setText(QString::fromUtf8("预览图加载失败"));
         }
     }
     else
     {
+        m_previewSourcePixmap = QPixmap();
         previewImageLabel->clear();
         previewImageLabel->setText(QString::fromUtf8("暂无预览图"));
     }
@@ -899,4 +908,29 @@ void ManagementWindow::updateSoftwarePreview(const QString &softwareId)
 
     // 备注
     previewRemarkLabel->setText(item->remark.isEmpty() ? QString::fromUtf8("（无）") : item->remark);
+}
+
+void ManagementWindow::applyPreviewPixmap()
+{
+    if (previewImageLabel == nullptr || m_previewSourcePixmap.isNull())
+    {
+        return;
+    }
+    // 标签尺寸尚未确定（首次打开时布局未完成）则跳过，等 Resize 事件再重绘
+    const QSize targetSize = previewImageLabel->size();
+    if (targetSize.width() <= 0 || targetSize.height() <= 0)
+    {
+        return;
+    }
+    previewImageLabel->setPixmap(
+        m_previewSourcePixmap.scaled(targetSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+}
+
+bool ManagementWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == previewImageLabel && event->type() == QEvent::Resize)
+    {
+        applyPreviewPixmap();
+    }
+    return QWidget::eventFilter(watched, event);
 }

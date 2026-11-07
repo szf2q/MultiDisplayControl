@@ -1,6 +1,7 @@
 #ifndef MANAGEMENTWINDOW_H
 #define MANAGEMENTWINDOW_H
 
+#include <QPixmap>
 #include <QPoint>
 #include <QStringList>
 #include <QWidget>
@@ -125,6 +126,18 @@ class ManagementWindow : public QWidget
      */
     void mouseReleaseEvent(QMouseEvent *event) override;
 
+    /**
+     * @brief 事件过滤器：监听预览图标签的尺寸变化并重新缩放图片
+     *
+     * 首次打开窗口时预览标签尚未完成布局，直接按当时的 size() 缩放会得到很小的图；
+     * 因此保存原始 pixmap，在标签真实尺寸确定后（Resize 事件）再按实际大小重绘。
+     *
+     * @param watched 事件来源对象
+     * @param event   事件
+     * @return true 表示已处理并拦截该事件，false 表示继续正常分发
+     */
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
   private slots:
     /**
      * @brief 保存并应用
@@ -215,6 +228,14 @@ class ManagementWindow : public QWidget
     void updateSoftwarePreview(const QString &softwareId);
 
     /**
+     * @brief 按预览图标签的当前尺寸重绘原始 pixmap
+     *
+     * 内部保留原始图片，只在标签已有有效尺寸时缩放显示，避免首次打开时因
+     * 标签尚未完成布局而被缩成小图。
+     */
+    void applyPreviewPixmap();
+
+    /**
      * @brief 刷新中间选中屏幕的软件清单
      * @param screenRow 屏幕行号
      */
@@ -254,6 +275,8 @@ class ManagementWindow : public QWidget
     // 左下软件预览
     QLabel *previewTitleLabel = nullptr;
     QLabel *previewImageLabel = nullptr;
+    /** 当前预览图的原始像素图，用于在标签尺寸变化后按实际大小重新缩放 */
+    QPixmap m_previewSourcePixmap;
     QLabel *previewNameLabel = nullptr;
     QLabel *previewTypeLabel = nullptr;
     QLabel *previewPathLabel = nullptr;
