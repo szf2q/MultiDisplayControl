@@ -207,6 +207,9 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     screenSoftwareList->setIconSize(QSize(48, 27));
     screenListLayout->addWidget(screenListTitle);
     screenListLayout->addWidget(screenSoftwareList, 1);
+    // 限制中间屏幕软件清单的最大宽度，避免子控件撑宽
+    screenListGroup->setMaximumWidth(160);
+    screenListGroup->setMinimumWidth(100);
 
     // 右侧：总软件清单
     libraryPanel = new SoftwareLibraryPanel(this);

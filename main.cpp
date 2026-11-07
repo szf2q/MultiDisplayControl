@@ -486,6 +486,23 @@ int main(int argc, char *argv[])
         manager.setConfig(config);
         QObject::connect(&GlobalKeyWatcher::watcher, &GlobalKeyWatcher::manageKeyPressed, &manager,
                          [&manager]() { manager.toggle(); });
+        // Alt+Q：管理界面可见时只关闭管理界面，不可见时才退出整个程序
+        // 先断开 closeAppsWatcher 里注册的旧连接，避免重复触发
+        QObject::disconnect(&GlobalKeyWatcher::watcher, &GlobalKeyWatcher::quitKeyPressed, nullptr, nullptr);
+        QObject::connect(&GlobalKeyWatcher::watcher, &GlobalKeyWatcher::quitKeyPressed,
+                         [&manager](const QString &keyMessage) {
+                             if (manager.isVisible())
+                             {
+                                 qDebug() << "捕获到组合键:" << keyMessage << "，关闭管理界面";
+                                 manager.hide();
+                                 return;
+                             }
+                             qDebug() << "捕获到组合键:" << keyMessage << "，关闭所有窗体，退出程序";
+                             qDeleteAll(GlobalVariants::winList);
+                             GlobalVariants::winList.clear();
+                             QApplication::quit();
+                             QApplication::exit(0);
+                         });
         QObject::connect(&manager, &ManagementWindow::applyRequested, &manager,
                          [&runtime, &manager](const MultiScreenConfig &newConfig) {
                              QStringList warnings;
