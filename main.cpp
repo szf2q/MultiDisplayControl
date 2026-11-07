@@ -477,7 +477,8 @@ int main(int argc, char *argv[])
         reloadScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         reloadCurrentScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         switchTabWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
-        closeAppsWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
+        // 注意：closeAppsWatcher 不在此调用，Alt+Q/Alt+F4 的逻辑统一在下方
+        // 结合管理窗口可见性判断：管理界面打开时只关闭管理界面，否则退出程序
         restartAppWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         shortcutHelpWatcher(GlobalKeyWatcher::watcher, shortcutHelpDialog);
 
@@ -486,10 +487,9 @@ int main(int argc, char *argv[])
         manager.setConfig(config);
         QObject::connect(&GlobalKeyWatcher::watcher, &GlobalKeyWatcher::manageKeyPressed, &manager,
                          [&manager]() { manager.toggle(); });
-        // Alt+Q：管理界面可见时只关闭管理界面，不可见时才退出整个程序
-        // 先断开 closeAppsWatcher 里注册的旧连接，避免重复触发
-        QObject::disconnect(&GlobalKeyWatcher::watcher, &GlobalKeyWatcher::quitKeyPressed, nullptr, nullptr);
+        // Alt+Q / Alt+F4：管理界面可见时只关闭管理界面，不可见时才退出整个程序
         QObject::connect(&GlobalKeyWatcher::watcher, &GlobalKeyWatcher::quitKeyPressed,
+                         &manager,
                          [&manager](const QString &keyMessage) {
                              if (manager.isVisible())
                              {
