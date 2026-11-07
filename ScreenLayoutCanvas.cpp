@@ -38,6 +38,70 @@ namespace
 PhysicalScreenMap::PhysicalScreenMap(QWidget *parent) : QWidget(parent)
 {
     setCursor(Qt::PointingHandCursor);
+    // 固定高度撑开绘图区，避免被下方卡片区挤成 0 高度导致屏幕框不可见
+    setMinimumHeight(180);
+}
+
+QList<QRectF> PhysicalScreenMap::screenRects() const
+{
+    QList<QRectF> rects;
+    const QList<QScreen *> screens = QGuiApplication::screens();
+    const int count = screens.size();
+    if (count <= 0)
+    {
+        return rects;
+    }
+
+    const double margin = 20.0;
+    const double gap = 16.0;
+    const double availableWidth = width() - margin * 2;
+    const double availableHeight = height() - margin * 2;
+    if (availableWidth <= 0 || availableHeight <= 0)
+    {
+        return rects;
+    }
+
+    // 每块屏按实际分辨率的长宽比换算宽度，统一高度；分辨率异常时退回 16:9
+    QList<double> ratios;
+    double ratioSum = 0.0;
+    for (int i = 0; i < count; i++)
+    {
+        const QSize geoSize = screens[i]->geometry().size();
+        const double ratio = (geoSize.width() > 0 && geoSize.height() > 0)
+                                 ? static_cast<double>(geoSize.width()) / static_cast<double>(geoSize.height())
+                                 : 16.0 / 9.0;
+        ratios.append(ratio);
+        ratioSum += ratio;
+    }
+    if (ratioSum <= 0)
+    {
+        return rects;
+    }
+
+    // 统一高度受控件高度与总宽度两个约束，取较小值保证不溢出
+    const double heightByWidth = (availableWidth - gap * (count - 1)) / ratioSum;
+    const double rectH = qMin(availableHeight, heightByWidth);
+    if (rectH <= 0)
+    {
+        return rects;
+    }
+
+    double totalW = gap * (count - 1);
+    for (int i = 0; i < count; i++)
+    {
+        totalW += ratios[i] * rectH;
+    }
+    const double startX = margin + (availableWidth - totalW) / 2.0;
+    const double startY = margin + (availableHeight - rectH) / 2.0;
+
+    double x = startX;
+    for (int i = 0; i < count; i++)
+    {
+        const double rectW = ratios[i] * rectH;
+        rects.append(QRectF(x, startY, rectW, rectH));
+        x += rectW + gap;
+    }
+    return rects;
 }
 
 void PhysicalScreenMap::setConfig(MultiScreenConfig *config)
@@ -67,34 +131,20 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
         return;
     }
 
-    const double margin = 20;
-    const double gap = 16;
-    const double availableWidth = width() - margin * 2;
-    const double availableHeight = height() - margin * 2;
-    if (availableWidth <= 0 || availableHeight <= 0)
+    // 各屏矩形由 screenRects 统一计算，保证绘制与命中判定使用同一套几何
+    const QList<QRectF> rects = screenRects();
+    if (rects.size() != count)
     {
         return;
     }
-
-    // 计算单个 16:9 矩形的最大可能尺寸：所有屏横向均匀排列
-    // 总宽度 = n * w + (n-1) * gap
-    // 总高度 = w * 9 / 16
-    // 约束：总宽度 <= availableWidth 且 总高度 <= availableHeight
-    const double maxWByWidth = (availableWidth - gap * (count - 1)) / count;
-    const double maxWByHeight = availableHeight * 16.0 / 9.0;
-    const double rectW = qMax(80.0, qMin(maxWByWidth, maxWByHeight));
-    const double rectH = rectW * 9.0 / 16.0;
-
-    const double totalW = count * rectW + gap * (count - 1);
-    const double startX = margin + (availableWidth - totalW) / 2.0;
-    const double startY = margin + (availableHeight - rectH) / 2.0;
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
     for (int i = 0; i < count; i++)
     {
-        const QRectF targetRect(startX + i * (rectW + gap), startY, rectW, rectH);
+        const QRectF targetRect = rects[i];
+        const qreal rectW = targetRect.width();
         const QString &displayName = screens[i]->name();
         const bool selected = (!m_selected.isEmpty() && displayName == m_selected);
         const QSize geoSize = screens[i]->geometry().size();
@@ -157,27 +207,37 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
             painter.drawText(primaryRect, Qt::AlignCenter, primaryText);
         }
 
-        // 中间显示屏幕名称
+        // 屏幕名称 + 分辨率作为一组在框内水平垂直居中
         QFont nameFont = painter.font();
         nameFont.setFamily(QString::fromUtf8("微软雅黑"));
         nameFont.setPixelSize(13);
         nameFont.setBold(true);
         painter.setFont(nameFont);
-        painter.setPen(selected ? QColor(220, 240, 255) : QColor(190, 210, 230));
-        const QRect nameRect(targetRect.left(), targetRect.top() + rectH * 0.35, rectW, rectH * 0.25);
-        const QString elidedName = QFontMetrics(nameFont).elidedText(displayName, Qt::ElideMiddle,
-                                                                     static_cast<int>(rectW - 16));
-        painter.drawText(nameRect, Qt::AlignCenter, elidedName);
 
-        // 底部显示分辨率
         QFont resFont = painter.font();
         resFont.setFamily(QString::fromUtf8("微软雅黑"));
         resFont.setPixelSize(11);
+        resFont.setBold(false);
+
+        const QFontMetrics nameFm(nameFont);
+        const QFontMetrics resFm(resFont);
+        const qreal lineGap = 2;
+        const qreal blockH = nameFm.height() + lineGap + resFm.height();
+        const qreal blockTop = targetRect.center().y() - blockH / 2.0;
+        const QString resText = QString("%1 × %2").arg(geoSize.width()).arg(geoSize.height());
+
+        painter.setFont(nameFont);
+        painter.setPen(selected ? QColor(220, 240, 255) : QColor(190, 210, 230));
+        const QString elidedName = nameFm.elidedText(displayName, Qt::ElideMiddle,
+                                                     static_cast<int>(rectW - 16));
+        painter.drawText(QRectF(targetRect.left() + 8, blockTop, rectW - 16, nameFm.height()),
+                         Qt::AlignCenter, elidedName);
+
         painter.setFont(resFont);
         painter.setPen(QColor(130, 160, 190));
-        const QString resText = QString("%1 × %2").arg(geoSize.width()).arg(geoSize.height());
-        const QRect resRect(targetRect.left(), targetRect.bottom() - rectH * 0.3, rectW, rectH * 0.2);
-        painter.drawText(resRect, Qt::AlignCenter, resText);
+        painter.drawText(QRectF(targetRect.left() + 8, blockTop + nameFm.height() + lineGap, rectW - 16,
+                                resFm.height()),
+                         Qt::AlignCenter, resText);
     }
 }
 
@@ -201,35 +261,10 @@ void PhysicalScreenMap::mousePressEvent(QMouseEvent *event)
 
 int PhysicalScreenMap::hitTest(const QPoint &pos) const
 {
-    const QList<QScreen *> screens = QGuiApplication::screens();
-    const int count = screens.size();
-    if (count <= 0)
+    const QList<QRectF> rects = screenRects();
+    for (int i = 0; i < rects.size(); i++)
     {
-        return -1;
-    }
-
-    const double margin = 20;
-    const double gap = 16;
-    const double availableWidth = width() - margin * 2;
-    const double availableHeight = height() - margin * 2;
-    if (availableWidth <= 0 || availableHeight <= 0)
-    {
-        return -1;
-    }
-
-    const double maxWByWidth = (availableWidth - gap * (count - 1)) / count;
-    const double maxWByHeight = availableHeight * 16.0 / 9.0;
-    const double rectW = qMax(80.0, qMin(maxWByWidth, maxWByHeight));
-    const double rectH = rectW * 9.0 / 16.0;
-
-    const double totalW = count * rectW + gap * (count - 1);
-    const double startX = margin + (availableWidth - totalW) / 2.0;
-    const double startY = margin + (availableHeight - rectH) / 2.0;
-
-    for (int i = 0; i < count; i++)
-    {
-        const QRectF targetRect(startX + i * (rectW + gap), startY, rectW, rectH);
-        if (targetRect.contains(pos))
+        if (rects[i].contains(pos))
         {
             return i;
         }

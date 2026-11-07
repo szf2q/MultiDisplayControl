@@ -16,7 +16,7 @@ class QSpinBox;
 /**
  * @brief 物理屏布局示意图
  *
- * 以统一的 16:9 矩形绘制每块物理屏，标注序号、名称与分辨率；
+ * 按各物理屏实际分辨率的长宽比绘制矩形，标注序号、名称与分辨率；
  * 点击某块物理屏可选中对应屏幕配置，选中态用青色边框标识。
  */
 class PhysicalScreenMap : public QWidget
@@ -68,6 +68,16 @@ class PhysicalScreenMap : public QWidget
     void mousePressEvent(QMouseEvent *event) override;
 
   private:
+    /**
+     * @brief 计算每块物理屏的绘制矩形
+     *
+     * 统一高度、按各屏实际分辨率的长宽比计算各自宽度，所有矩形整体水平垂直居中。
+     * 高度同时受控件高度与总宽度约束，保证多屏时不溢出。
+     *
+     * @return 与 QGuiApplication::screens() 顺序一致的矩形列表，空间不足时返回空列表
+     */
+    QList<QRectF> screenRects() const;
+
     /**
      * @brief 根据鼠标位置计算命中的物理屏下标
      * @param pos 鼠标坐标（相对本控件）
