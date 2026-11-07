@@ -16,6 +16,7 @@
 #include <QScreen>
 #include <QSplitter>
 #include <QStyle>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include "ConfigStore.h"
@@ -107,7 +108,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     QVBoxLayout *canvasLayout = new QVBoxLayout(canvasGroup);
     canvasLayout->setContentsMargins(10, 10, 10, 10);
     QLabel *canvasTitle = new QLabel(
-        QString::fromUtf8("屏幕布局（拖动调位置，右下角调大小，固定16:9）"), canvasGroup);
+        QString::fromUtf8("屏幕布局"), canvasGroup);
     canvasTitle->setObjectName(QStringLiteral("groupTitle"));
     layoutCanvas = new ScreenLayoutCanvas(canvasGroup);
     canvasLayout->addWidget(canvasTitle);
@@ -227,8 +228,21 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     contentSplitter->setStretchFactor(0, 12);
     contentSplitter->setStretchFactor(1, 3);
     contentSplitter->setStretchFactor(2, 2);
-    contentSplitter->setSizes(QList<int>() << 640 << 160 << 107);
     contentSplitter->setChildrenCollapsible(false);
+
+    // 布局完成后按比例强制分配三栏宽度，避免子控件 sizeHint 导致初始比例偏离
+    QTimer::singleShot(0, contentSplitter, [contentSplitter]() {
+        const int totalW = contentSplitter->width();
+        if (totalW <= 0)
+        {
+            return;
+        }
+        const int totalStretch = 12 + 3 + 2;
+        const int w0 = totalW * 12 / totalStretch;
+        const int w1 = totalW * 3 / totalStretch;
+        const int w2 = totalW - w0 - w1;
+        contentSplitter->setSizes(QList<int>() << w0 << w1 << w2);
+    });
 
     // ==================== 状态栏 ====================
     statusLabel = new QLabel(this);
