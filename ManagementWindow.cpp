@@ -218,15 +218,16 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     libraryLayout->addWidget(libraryTitle);
     libraryLayout->addWidget(libraryPanel, 1);
 
-    // 横向三栏 Splitter，宽度比例 4:1:1
+    // 横向三栏 Splitter，宽度比例 12:3:2（约 4:1:0.67）
+    // 右侧软件清单宽度为中间清单的三分之二，节省横向空间给左侧布局区
     QSplitter *contentSplitter = new QSplitter(Qt::Horizontal, this);
     contentSplitter->addWidget(leftSplitter);
     contentSplitter->addWidget(screenListGroup);
     contentSplitter->addWidget(libraryGroup);
-    contentSplitter->setStretchFactor(0, 4);
-    contentSplitter->setStretchFactor(1, 1);
-    contentSplitter->setStretchFactor(2, 1);
-    contentSplitter->setSizes(QList<int>() << 640 << 160 << 160);
+    contentSplitter->setStretchFactor(0, 12);
+    contentSplitter->setStretchFactor(1, 3);
+    contentSplitter->setStretchFactor(2, 2);
+    contentSplitter->setSizes(QList<int>() << 640 << 160 << 107);
     contentSplitter->setChildrenCollapsible(false);
 
     // ==================== 状态栏 ====================
