@@ -370,8 +370,11 @@ ScreenCard::ScreenCard(int row, QWidget *parent) : QFrame(parent), m_row(row)
     mainLayout->setContentsMargins(12, 12, 12, 12);
     mainLayout->addLayout(headerLayout);
     mainLayout->addWidget(displayLabel);
-    mainLayout->addWidget(assignmentList, 1);
+    // 已分配软件清单不在屏幕布局区展示（改由中间的「选中屏幕的软件」清单呈现），
+    // 控件本身继续保留并同步数据，作为保存顺序的数据源
+    assignmentList->hide();
     mainLayout->addLayout(offsetLayout);
+    mainLayout->addStretch(1);
 
     connect(indexSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
             [this](int value) { emit indexChanged(m_row, value); });
