@@ -181,8 +181,8 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     infoLayout->addWidget(previewRemarkLabel);
     infoLayout->addStretch(1);
 
-    previewContent->addWidget(previewImageLabel, 2);
-    previewContent->addWidget(infoWidget, 1);
+    previewContent->addWidget(previewImageLabel, 8);
+    previewContent->addWidget(infoWidget, 3);
 
     previewLayout->addWidget(previewTitleLabel);
     previewLayout->addLayout(previewContent, 1);
