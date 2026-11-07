@@ -36,6 +36,8 @@ namespace
 
 PhysicalScreenMap::PhysicalScreenMap(QWidget *parent) : QWidget(parent)
 {
+    // 开启鼠标跟踪，未按下时也能按位置切换拖动/缩放光标
+    setMouseTracking(true);
     setCursor(Qt::PointingHandCursor);
     // 固定高度撑开绘图区，避免被下方卡片区挤成 0 高度导致屏幕框不可见
     setMinimumHeight(180);
@@ -97,7 +99,19 @@ QList<QRectF> PhysicalScreenMap::screenRects() const
     for (int i = 0; i < count; i++)
     {
         const double rectW = ratios[i] * rectH;
-        rects.append(QRectF(x, startY, rectW, rectH));
+        QRectF rect(x, startY, rectW, rectH);
+        // 叠加用户拖拽产生的自定义偏移与尺寸，仅影响示意图显示，不改动配置
+        const QString &displayName = screens[i]->name();
+        rect.translate(m_customOffsets.value(displayName, QPoint(0, 0)));
+        if (m_customSizes.contains(displayName))
+        {
+            const QSizeF customSize = m_customSizes.value(displayName);
+            if (customSize.width() > 0 && customSize.height() > 0)
+            {
+                rect.setSize(customSize);
+            }
+        }
+        rects.append(rect);
         x += rectW + gap;
     }
     return rects;
@@ -237,6 +251,22 @@ void PhysicalScreenMap::paintEvent(QPaintEvent *event)
         painter.drawText(QRectF(targetRect.left() + 8, blockTop + nameFm.height() + lineGap, rectW - 16,
                                 resFm.height()),
                          Qt::AlignCenter, resText);
+
+        // 右下角调整大小手柄：斜纹三角，选中态高亮，提示此处可拖动缩放
+        const qreal handleSize = 12;
+        if (targetRect.width() > handleSize * 2 && targetRect.height() > handleSize * 2)
+        {
+            const QRectF handleRect(targetRect.right() - handleSize - 3,
+                                    targetRect.bottom() - handleSize - 3, handleSize, handleSize);
+            QPainterPath handlePath;
+            handlePath.moveTo(handleRect.bottomRight());
+            handlePath.lineTo(handleRect.bottomLeft());
+            handlePath.lineTo(handleRect.topRight());
+            handlePath.closeSubpath();
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(selected ? QColor(17, 192, 254) : QColor(90, 130, 170));
+            painter.drawPath(handlePath);
+        }
     }
 }
 
@@ -244,24 +274,117 @@ void PhysicalScreenMap::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton)
     {
-        const int idx = hitTest(event->pos());
-        if (idx >= 0)
+        const QList<QScreen *> screens = QGuiApplication::screens();
+        const QList<QRectF> rects = screenRects();
+
+        // 优先判定右下角手柄：命中则进入保持长宽比的缩放
+        int resizeIdx = -1;
+        if (hitResizeHandle(event->pos(), &resizeIdx) && resizeIdx >= 0 &&
+            resizeIdx < screens.size() && resizeIdx < rects.size())
         {
-            const QList<QScreen *> screens = QGuiApplication::screens();
-            if (idx < screens.size())
-            {
-                emit screenClicked(screens[idx]->name());
-                return;
-            }
+            m_dragMode = DragResize;
+            m_dragIndex = resizeIdx;
+            m_dragStartPos = event->pos();
+            m_dragStartRect = rects[resizeIdx];
+            setCursor(Qt::SizeFDiagCursor);
+            // 缩放前先选中该屏，手柄与卡片内容随之切换
+            emit screenClicked(screens[resizeIdx]->name());
+            return;
+        }
+
+        // 命中屏幕矩形内部：进入拖动位置
+        const int idx = hitTest(event->pos());
+        if (idx >= 0 && idx < screens.size() && idx < rects.size())
+        {
+            const QString &name = screens[idx]->name();
+            m_dragMode = DragMove;
+            m_dragIndex = idx;
+            m_dragStartPos = event->pos();
+            m_dragStartRect = rects[idx];
+            m_dragStartCustomOffset = m_customOffsets.value(name, QPoint(0, 0));
+            setCursor(Qt::ClosedHandCursor);
+            emit screenClicked(name);
+            return;
         }
     }
     QWidget::mousePressEvent(event);
 }
 
+void PhysicalScreenMap::mouseMoveEvent(QMouseEvent *event)
+{
+    const QList<QScreen *> screens = QGuiApplication::screens();
+
+    if (m_dragMode == DragMove && m_dragIndex >= 0 && m_dragIndex < screens.size())
+    {
+        // 拖动位置：以起始矩形左上角为基准累加鼠标位移，并限制在控件范围内
+        const QString &name = screens[m_dragIndex]->name();
+        const QPoint delta = event->pos() - m_dragStartPos;
+        QPointF topLeft = m_dragStartRect.topLeft() + QPointF(delta.x(), delta.y());
+        const double maxX = qMax(0.0, width() - m_dragStartRect.width());
+        const double maxY = qMax(0.0, height() - m_dragStartRect.height());
+        topLeft.setX(qBound(0.0, topLeft.x(), maxX));
+        topLeft.setY(qBound(0.0, topLeft.y(), maxY));
+        // 默认布局位置 = 起始矩形位置 - 起始自定义偏移，据此反算新的自定义偏移
+        const QPointF defaultTopLeft = m_dragStartRect.topLeft() - QPointF(m_dragStartCustomOffset);
+        m_customOffsets[name] = (topLeft - defaultTopLeft).toPoint();
+        update();
+        return;
+    }
+
+    if (m_dragMode == DragResize && m_dragIndex >= 0 && m_dragIndex < screens.size())
+    {
+        // 调整大小：以起始矩形的宽高比为准，拖拽幅度更大的方向决定尺寸
+        const QString &name = screens[m_dragIndex]->name();
+        const double aspect = (m_dragStartRect.height() > 0)
+                                  ? m_dragStartRect.width() / m_dragStartRect.height()
+                                  : 16.0 / 9.0;
+        const QPoint delta = event->pos() - m_dragStartPos;
+        double newWidth = (qAbs(delta.x()) >= qAbs(delta.y()))
+                              ? m_dragStartRect.width() + delta.x()
+                              : (m_dragStartRect.height() + delta.y()) * aspect;
+        const double minWidth = 100.0;
+        // 上限保证缩放后矩形右下角不越出控件，宽度与高度两个方向取更严格者
+        const double maxWidthByWidth = qMax(minWidth, width() - m_dragStartRect.left());
+        const double maxWidthByHeight = qMax(minWidth, (height() - m_dragStartRect.top()) * aspect);
+        newWidth = qBound(minWidth, newWidth, qMin(maxWidthByWidth, maxWidthByHeight));
+        m_customSizes[name] = QSizeF(newWidth, newWidth / aspect);
+        update();
+        return;
+    }
+
+    // 未拖拽时按鼠标所在位置切换光标：手柄为缩放光标，矩形内部为张手的光标
+    int resizeIdx = -1;
+    if (hitResizeHandle(event->pos(), &resizeIdx))
+    {
+        setCursor(Qt::SizeFDiagCursor);
+    }
+    else if (hitTest(event->pos()) >= 0)
+    {
+        setCursor(Qt::OpenHandCursor);
+    }
+    else
+    {
+        setCursor(Qt::PointingHandCursor);
+    }
+    QWidget::mouseMoveEvent(event);
+}
+
+void PhysicalScreenMap::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (m_dragMode != DragNone)
+    {
+        m_dragMode = DragNone;
+        m_dragIndex = -1;
+        setCursor(Qt::PointingHandCursor);
+    }
+    QWidget::mouseReleaseEvent(event);
+}
+
 int PhysicalScreenMap::hitTest(const QPoint &pos) const
 {
     const QList<QRectF> rects = screenRects();
-    for (int i = 0; i < rects.size(); i++)
+    // 从后往前遍历，后绘制（位于上层）的矩形优先命中
+    for (int i = rects.size() - 1; i >= 0; i--)
     {
         if (rects[i].contains(pos))
         {
@@ -269,6 +392,27 @@ int PhysicalScreenMap::hitTest(const QPoint &pos) const
         }
     }
     return -1;
+}
+
+bool PhysicalScreenMap::hitResizeHandle(const QPoint &pos, int *index) const
+{
+    const QList<QRectF> rects = screenRects();
+    // 命中区域略大于绘制出的三角，便于鼠标抓取
+    const qreal handleSize = 18;
+    for (int i = rects.size() - 1; i >= 0; i--)
+    {
+        const QRectF &rect = rects[i];
+        const QRectF handleRect(rect.right() - handleSize, rect.bottom() - handleSize, handleSize, handleSize);
+        if (handleRect.contains(pos))
+        {
+            if (index != nullptr)
+            {
+                *index = i;
+            }
+            return true;
+        }
+    }
+    return false;
 }
 AppAssignmentList::AppAssignmentList(QWidget *parent) : QListWidget(parent)
 {

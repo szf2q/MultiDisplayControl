@@ -2,6 +2,7 @@
 #define SCREENLAYOUTCANVAS_H
 
 #include <QFrame>
+#include <QHash>
 #include <QListWidget>
 #include <QWidget>
 
@@ -18,6 +19,8 @@ class QSpinBox;
  *
  * 按各物理屏实际分辨率的长宽比绘制矩形，标注序号、名称与分辨率；
  * 点击某块物理屏可选中对应屏幕配置，选中态用青色边框标识。
+ * 矩形可用鼠标拖动位置、拖动右下角手柄调整大小（保持长宽比），
+ * 这些调整只影响示意图显示，不写入配置、不影响真实屏幕位置。
  */
 class PhysicalScreenMap : public QWidget
 {
@@ -62,17 +65,40 @@ class PhysicalScreenMap : public QWidget
     void paintEvent(QPaintEvent *event) override;
 
     /**
-     * @brief 鼠标按下：命中物理屏矩形时发出点击信号
+     * @brief 鼠标按下：命中调整手柄进入缩放，命中矩形内部进入拖动，并选中该屏
      * @param event 鼠标事件
      */
     void mousePressEvent(QMouseEvent *event) override;
 
+    /**
+     * @brief 鼠标移动：拖拽中更新自定义位置/大小，非拖拽时更新光标形态
+     * @param event 鼠标事件
+     */
+    void mouseMoveEvent(QMouseEvent *event) override;
+
+    /**
+     * @brief 鼠标释放：结束拖拽
+     * @param event 鼠标事件
+     */
+    void mouseReleaseEvent(QMouseEvent *event) override;
+
   private:
+    /**
+     * @brief 拖拽操作类型
+     */
+    enum DragMode
+    {
+        DragNone,   /**< 无拖拽 */
+        DragMove,   /**< 拖动位置 */
+        DragResize  /**< 拖动右下角手柄调整大小 */
+    };
+
     /**
      * @brief 计算每块物理屏的绘制矩形
      *
      * 统一高度、按各屏实际分辨率的长宽比计算各自宽度，所有矩形整体水平垂直居中。
-     * 高度同时受控件高度与总宽度约束，保证多屏时不溢出。
+     * 高度同时受控件高度与总宽度约束，保证多屏时不溢出；
+     * 计算完成后叠加用户拖拽自定义的偏移与大小。
      *
      * @return 与 QGuiApplication::screens() 顺序一致的矩形列表，空间不足时返回空列表
      */
@@ -85,10 +111,42 @@ class PhysicalScreenMap : public QWidget
      */
     int hitTest(const QPoint &pos) const;
 
+    /**
+     * @brief 检测鼠标位置是否落在某块屏右下角的调整手柄上
+     * @param pos   鼠标坐标（相对本控件）
+     * @param index 输出参数：命中的物理屏下标，可为 nullptr
+     * @return true 表示命中调整手柄
+     */
+    bool hitResizeHandle(const QPoint &pos, int *index) const;
+
     /** 配置引用，用于读取屏幕序号与主屏标记，可为 nullptr */
     MultiScreenConfig *m_config = nullptr;
     /** 选中的物理屏名称（青色边框） */
     QString m_selected;
+    /** 当前拖拽模式 */
+    DragMode m_dragMode = DragNone;
+    /** 正在拖拽的物理屏下标（QGuiApplication::screens() 顺序） */
+    int m_dragIndex = -1;
+    /** 拖拽起始鼠标位置（相对本控件） */
+    QPoint m_dragStartPos;
+    /** 拖拽起始时的显示矩形，缩放时用于换算长宽比与最小/最大尺寸 */
+    QRectF m_dragStartRect;
+    /** 拖拽起始时该屏的自定义偏移，拖动时在此基础上累加 */
+    QPoint m_dragStartCustomOffset;
+    /**
+     * @brief 物理屏在示意图中的自定义偏移（显示像素）
+     *
+     * key 为物理屏名称（QScreen::name()），value 为相对默认位置的偏移量。
+     * 仅用于管理界面显示，不影响真实物理屏位置与配置文件。
+     */
+    QHash<QString, QPoint> m_customOffsets;
+    /**
+     * @brief 物理屏在示意图中的自定义显示尺寸（显示像素，保持屏幕长宽比）
+     *
+     * key 为物理屏名称（QScreen::name()），value 为自定义宽高。
+     * 未设置时使用按控件空间自动换算的默认尺寸。仅用于管理界面显示。
+     */
+    QHash<QString, QSizeF> m_customSizes;
 };
 
 /**
