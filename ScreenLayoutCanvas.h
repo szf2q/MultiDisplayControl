@@ -16,9 +16,8 @@ class QSpinBox;
 /**
  * @brief 物理屏布局示意图
  *
- * 按所有物理屏的真实几何等比缩放绘制矩形，并标注序号、名称、分辨率与主屏标记；
- * 点击某块物理屏可选中对应屏幕配置，选中态用青色边框标识，帮助用户快速定位；
- * 支持拖动物理屏调整示意图中的布局位置（仅影响管理界面显示，不改变真实物理屏位置与配置）。
+ * 以统一的 16:9 矩形绘制每块物理屏，标注序号、名称与分辨率；
+ * 点击某块物理屏可选中对应屏幕配置，选中态用青色边框标识。
  */
 class PhysicalScreenMap : public QWidget
 {
@@ -63,34 +62,12 @@ class PhysicalScreenMap : public QWidget
     void paintEvent(QPaintEvent *event) override;
 
     /**
-     * @brief 鼠标按下：命中物理屏矩形时记录拖拽起点
+     * @brief 鼠标按下：命中物理屏矩形时发出点击信号
      * @param event 鼠标事件
      */
     void mousePressEvent(QMouseEvent *event) override;
 
-    /**
-     * @brief 鼠标移动：拖拽状态下更新屏幕位置
-     * @param event 鼠标事件
-     */
-    void mouseMoveEvent(QMouseEvent *event) override;
-
-    /**
-     * @brief 鼠标释放：结束拖拽
-     * @param event 鼠标事件
-     */
-    void mouseReleaseEvent(QMouseEvent *event) override;
-
   private:
-    /**
-     * @brief 拖拽操作类型
-     */
-    enum DragMode
-    {
-        DragNone,    /**< 无拖拽 */
-        DragMove,    /**< 拖动位置 */
-        DragResize   /**< 调整大小 */
-    };
-
     /**
      * @brief 根据鼠标位置计算命中的物理屏下标
      * @param pos 鼠标坐标（相对本控件）
@@ -98,53 +75,10 @@ class PhysicalScreenMap : public QWidget
      */
     int hitTest(const QPoint &pos) const;
 
-    /**
-     * @brief 检测鼠标位置是否在调整大小手柄区域
-     * @param pos    鼠标坐标
-     * @param index  输出参数：命中的屏索引
-     * @return true 表示命中调整手柄
-     */
-    bool hitResizeHandle(const QPoint &pos, int *index) const;
-
-    /**
-     * @brief 获取物理屏在示意图中的显示矩形（含自定义拖拽偏移和自定义大小）
-     * @param screenIndex 物理屏下标
-     * @param bounding    所有屏的外接矩形
-     * @param scale       缩放比例
-     * @param baseOffset  基础偏移（居中用）
-     * @return 显示矩形
-     */
-    QRectF screenDisplayRect(int screenIndex, const QRectF &bounding, double scale,
-                             const QPointF &baseOffset) const;
-
     /** 配置引用，用于读取屏幕序号与主屏标记，可为 nullptr */
     MultiScreenConfig *m_config = nullptr;
     /** 选中的物理屏名称（青色边框） */
     QString m_selected;
-    /** 当前拖拽模式 */
-    DragMode m_dragMode = DragNone;
-    /** 正在拖拽的物理屏下标 */
-    int m_dragIndex = -1;
-    /** 拖拽起点相对屏幕矩形左上角的偏移（像素，显示坐标） */
-    QPoint m_dragOffset;
-    /** 调整大小时记录的起始尺寸 */
-    QSize m_dragStartSize;
-    /** 调整大小时记录的起始鼠标位置 */
-    QPoint m_dragStartPos;
-    /**
-     * @brief 物理屏在示意图中的自定义偏移（像素，已缩放后的显示坐标）
-     *
-     * key 为物理屏名称（QScreen::name()），value 为相对默认位置的偏移量。
-     * 仅用于管理界面显示，不影响真实物理屏位置与配置文件。
-     */
-    QHash<QString, QPoint> m_customOffsets;
-    /**
-     * @brief 物理屏在示意图中的自定义大小（像素，已缩放后的显示尺寸）
-     *
-     * key 为物理屏名称（QScreen::name()），value 为自定义宽高。
-     * 为空时使用默认缩放尺寸。仅用于管理界面显示，不影响真实配置。
-     */
-    QHash<QString, QSize> m_customSizes;
 };
 
 /**
