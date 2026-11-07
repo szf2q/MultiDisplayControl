@@ -564,76 +564,11 @@ SoftwareLibraryPanel::SoftwareLibraryPanel(QWidget *parent) : QWidget(parent)
     leftLayout->addWidget(listWidget, 1);
     leftLayout->addLayout(buttonLayout);
 
-    // 右侧预览面板
-    QFrame *previewFrame = new QFrame(this);
-    previewFrame->setObjectName(QStringLiteral("previewFrame"));
-    previewFrame->setMinimumWidth(280);
-    QVBoxLayout *previewLayout = new QVBoxLayout(previewFrame);
-    previewLayout->setContentsMargins(12, 12, 12, 12);
-    previewLayout->setSpacing(8);
-
-    QLabel *previewTitle = new QLabel(QString::fromUtf8("软件预览"), previewFrame);
-    previewTitle->setObjectName(QStringLiteral("previewTitle"));
-
-    previewImageLabel = new QLabel(previewFrame);
-    previewImageLabel->setObjectName(QStringLiteral("previewImage"));
-    previewImageLabel->setAlignment(Qt::AlignCenter);
-    previewImageLabel->setMinimumHeight(160);
-    previewImageLabel->setStyleSheet(QStringLiteral(
-        "QLabel#previewImage { background-color: #0f1f36; border: 1px solid #28507d; "
-        "border-radius: 6px; color: #6d8cb0; }"));
-    previewImageLabel->setText(QString::fromUtf8("暂无预览图"));
-
-    previewNameLabel = new QLabel(previewFrame);
-    previewNameLabel->setObjectName(QStringLiteral("previewName"));
-    previewNameLabel->setWordWrap(true);
-    previewNameLabel->setStyleSheet(
-        QStringLiteral("QLabel#previewName { font-size: 14px; font-weight: bold; color: #e0eefc; }"));
-
-    previewTypeLabel = new QLabel(previewFrame);
-    previewTypeLabel->setStyleSheet(QStringLiteral("color: #88aacc;"));
-
-    QFrame *divider = new QFrame(previewFrame);
-    divider->setFrameShape(QFrame::HLine);
-    divider->setStyleSheet(QStringLiteral("color: #28507d;"));
-
-    QLabel *pathLabelTitle = new QLabel(QString::fromUtf8("路径"), previewFrame);
-    pathLabelTitle->setStyleSheet(QStringLiteral("color: #88aacc; font-size: 12px;"));
-    previewPathLabel = new QLabel(previewFrame);
-    previewPathLabel->setWordWrap(true);
-    previewPathLabel->setStyleSheet(QStringLiteral("color: #c5d8ec; font-size: 12px;"));
-
-    QLabel *wtLabelTitle = new QLabel(QString::fromUtf8("窗口标题"), previewFrame);
-    wtLabelTitle->setStyleSheet(QStringLiteral("color: #88aacc; font-size: 12px;"));
-    previewWindowTitleLabel = new QLabel(previewFrame);
-    previewWindowTitleLabel->setWordWrap(true);
-    previewWindowTitleLabel->setStyleSheet(QStringLiteral("color: #c5d8ec; font-size: 12px;"));
-
-    QLabel *remarkLabelTitle = new QLabel(QString::fromUtf8("备注"), previewFrame);
-    remarkLabelTitle->setStyleSheet(QStringLiteral("color: #88aacc; font-size: 12px;"));
-    previewRemarkLabel = new QLabel(previewFrame);
-    previewRemarkLabel->setWordWrap(true);
-    previewRemarkLabel->setStyleSheet(QStringLiteral("color: #c5d8ec; font-size: 12px;"));
-
-    previewLayout->addWidget(previewTitle);
-    previewLayout->addWidget(previewImageLabel);
-    previewLayout->addWidget(previewNameLabel);
-    previewLayout->addWidget(previewTypeLabel);
-    previewLayout->addWidget(divider);
-    previewLayout->addWidget(pathLabelTitle);
-    previewLayout->addWidget(previewPathLabel);
-    previewLayout->addWidget(wtLabelTitle);
-    previewLayout->addWidget(previewWindowTitleLabel);
-    previewLayout->addWidget(remarkLabelTitle);
-    previewLayout->addWidget(previewRemarkLabel);
-    previewLayout->addStretch(1);
-
-    // 整体水平布局：左列表 + 右预览
-    QHBoxLayout *mainLayout = new QHBoxLayout(this);
+    // 整体布局：搜索 + 列表 + 按钮（单列）
+    QVBoxLayout *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(10);
-    mainLayout->addLayout(leftLayout, 3);
-    mainLayout->addWidget(previewFrame, 2);
+    mainLayout->addLayout(leftLayout);
 
     connect(searchEdit, &QLineEdit::textChanged, this, [this](const QString &) { onFilterChanged(); });
     connect(typeCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
@@ -780,7 +715,6 @@ void SoftwareLibraryPanel::onCurrentItemChanged()
     const QString softwareId = currentSoftwareId();
     editButton->setEnabled(!softwareId.isEmpty());
     removeButton->setEnabled(!softwareId.isEmpty());
-    updatePreview();
     emit selectionChanged(softwareId);
 }
 
@@ -1037,69 +971,4 @@ SoftwareItem *SoftwareLibraryPanel::findSoftware(const QString &softwareId)
         }
     }
     return nullptr;
-}
-
-void SoftwareLibraryPanel::updatePreview()
-{
-    const QString softwareId = currentSoftwareId();
-    if (softwareId.isEmpty())
-    {
-        previewImageLabel->clear();
-        previewImageLabel->setText(QString::fromUtf8("暂无预览图"));
-        previewNameLabel->setText(QString());
-        previewTypeLabel->setText(QString());
-        previewPathLabel->setText(QString());
-        previewWindowTitleLabel->setText(QString());
-        previewRemarkLabel->setText(QString());
-        return;
-    }
-    const SoftwareItem *item = findSoftware(softwareId);
-    if (item == nullptr)
-    {
-        return;
-    }
-
-    // 预览图
-    if (!item->previewPath.isEmpty())
-    {
-        QPixmap pix(item->previewPath);
-        if (!pix.isNull())
-        {
-            previewImageLabel->setPixmap(pix.scaled(previewImageLabel->size(), Qt::KeepAspectRatio,
-                                                    Qt::SmoothTransformation));
-        }
-        else
-        {
-            previewImageLabel->clear();
-            previewImageLabel->setText(QString::fromUtf8("预览图加载失败"));
-        }
-    }
-    else
-    {
-        previewImageLabel->clear();
-        previewImageLabel->setText(QString::fromUtf8("暂无预览图"));
-    }
-
-    // 名称与类型
-    previewNameLabel->setText(item->name);
-    const QString typeText = typeDisplayName(item->type);
-    const QString boundText = boundScreenText(softwareId);
-    if (!boundText.isEmpty())
-    {
-        previewTypeLabel->setText(QString("%1 · %2").arg(typeText).arg(boundText));
-    }
-    else
-    {
-        previewTypeLabel->setText(typeText);
-    }
-
-    // 路径
-    previewPathLabel->setText(item->path.isEmpty() ? QString::fromUtf8("（未设置）") : item->path);
-
-    // 窗口标题
-    previewWindowTitleLabel->setText(
-        item->windowTitle.isEmpty() ? QString::fromUtf8("（未设置）") : item->windowTitle);
-
-    // 备注
-    previewRemarkLabel->setText(item->remark.isEmpty() ? QString::fromUtf8("（无）") : item->remark);
 }
