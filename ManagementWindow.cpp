@@ -219,15 +219,15 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     libraryLayout->addWidget(libraryTitle);
     libraryLayout->addWidget(libraryPanel, 1);
 
-    // 横向三栏 Splitter，宽度比例 12:3:2（约 4:1:0.67）
-    // 右侧软件清单宽度为中间清单的三分之二，节省横向空间给左侧布局区
+    // 横向三栏 Splitter，宽度比例 12:3:1
+    // 右侧软件清单宽度为中间清单的三分之一，腾出更多空间给左侧布局区
     QSplitter *contentSplitter = new QSplitter(Qt::Horizontal, this);
     contentSplitter->addWidget(leftSplitter);
     contentSplitter->addWidget(screenListGroup);
     contentSplitter->addWidget(libraryGroup);
     contentSplitter->setStretchFactor(0, 12);
     contentSplitter->setStretchFactor(1, 3);
-    contentSplitter->setStretchFactor(2, 2);
+    contentSplitter->setStretchFactor(2, 1);
     contentSplitter->setChildrenCollapsible(false);
 
     // 布局完成后按比例强制分配三栏宽度，避免子控件 sizeHint 导致初始比例偏离
@@ -237,7 +237,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
         {
             return;
         }
-        const int totalStretch = 12 + 3 + 2;
+        const int totalStretch = 12 + 3 + 1;
         const int w0 = totalW * 12 / totalStretch;
         const int w1 = totalW * 3 / totalStretch;
         const int w2 = totalW - w0 - w1;

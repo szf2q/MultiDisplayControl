@@ -147,14 +147,14 @@ namespace
             }
 
             const bool selected = (opt.state & QStyle::State_Selected) != 0;
-            const int lineHeight = 22;
+            const int lineHeight = 18;
             const int totalHeight = lineHeight * 2 + 2;
             const int top = textRect.top() + qMax(0, (textRect.height() - totalHeight) / 2);
 
             painter->save();
             // 第一行：软件名称，选中时用白色保证对比度
             QFont nameFont = opt.font;
-            nameFont.setPixelSize(15);
+            nameFont.setPixelSize(13);
             nameFont.setBold(true);
             painter->setFont(nameFont);
             painter->setPen(selected ? QColor(Qt::white) : QColor(0xd7, 0xe9, 0xff));
@@ -164,7 +164,7 @@ namespace
 
             // 第二行：左侧类型文本，右侧已绑定标记（右对齐、醒目色）
             QFont infoFont = opt.font;
-            infoFont.setPixelSize(13);
+            infoFont.setPixelSize(11);
             painter->setFont(infoFont);
             const QFontMetrics infoMetrics(infoFont);
             const QRect infoRect(textRect.left(), nameRect.bottom() + 2, textRect.width(), lineHeight);
@@ -537,7 +537,7 @@ SoftwareLibraryPanel::SoftwareLibraryPanel(QWidget *parent) : QWidget(parent)
 
     listWidget = new SoftwareListWidget(this);
     // 列表项左侧直接展示软件预览缩略图，尺寸按 16:9 预留
-    listWidget->setIconSize(QSize(128, 72));
+    listWidget->setIconSize(QSize(64, 36));
     listWidget->setDragEnabled(true);
     listWidget->setDragDropMode(QAbstractItemView::DragOnly);
     listWidget->setDefaultDropAction(Qt::CopyAction);
@@ -628,8 +628,8 @@ void SoftwareLibraryPanel::refresh()
                 // 避免用户拖到屏幕后才收到“已绑定”的失败提示
                 item->setFlags(item->flags() & ~Qt::ItemIsDragEnabled);
             }
-            // 与 128x72 缩略图匹配的列表项高度，留出上下内边距
-            item->setSizeHint(QSize(0, 84));
+            // 与 64x36 缩略图匹配的列表项高度，留出上下内边距
+            item->setSizeHint(QSize(0, 56));
         }
     }
     listWidget->blockSignals(false);
@@ -846,9 +846,9 @@ void SoftwareLibraryPanel::onItemDoubleClicked(QListWidgetItem *item)
 
 QIcon SoftwareLibraryPanel::iconForSoftware(const SoftwareItem &software) const
 {
-    // 预览图统一输出为 128x72：宽度、高度都固定，避免不同宽高比的图片
+    // 预览图统一输出为 64x36：宽度、高度都固定，避免不同宽高比的图片
     // 让列表项左侧图标的实际宽度不同，进而导致软件名称左边界参差不齐
-    const QSize iconSize(128, 72);
+    const QSize iconSize(64, 36);
     const QString previewFile = SoftwareCapture::resolveExistingPreview(QApplication::applicationDirPath(), software);
     if (!previewFile.isEmpty())
     {
