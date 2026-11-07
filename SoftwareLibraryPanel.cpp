@@ -524,12 +524,14 @@ SoftwareLibraryPanel::SoftwareLibraryPanel(QWidget *parent) : QWidget(parent)
 {
     searchEdit = new QLineEdit(this);
     searchEdit->setPlaceholderText(QString::fromUtf8("搜索名称或路径"));
+    searchEdit->setMinimumWidth(60);
 
     typeCombo = new QComboBox(this);
     typeCombo->addItem(QString::fromUtf8("全部类型"), QString());
     typeCombo->addItem(QString::fromUtf8("桌面应用"), QStringLiteral("desktop"));
     typeCombo->addItem(QString::fromUtf8("网页"), QStringLiteral("web"));
     typeCombo->addItem(QString::fromUtf8("演示文稿"), QStringLiteral("ppt"));
+    typeCombo->setMinimumWidth(70);
 
     QHBoxLayout *filterLayout = new QHBoxLayout();
     filterLayout->addWidget(searchEdit, 1);
@@ -550,6 +552,9 @@ SoftwareLibraryPanel::SoftwareLibraryPanel(QWidget *parent) : QWidget(parent)
     addButton = new QPushButton(QString::fromUtf8("新增"), this);
     editButton = new QPushButton(QString::fromUtf8("编辑"), this);
     removeButton = new QPushButton(QString::fromUtf8("删除"), this);
+    addButton->setMinimumWidth(40);
+    editButton->setMinimumWidth(40);
+    removeButton->setMinimumWidth(40);
 
     QHBoxLayout *buttonLayout = new QHBoxLayout();
     buttonLayout->addWidget(addButton);
