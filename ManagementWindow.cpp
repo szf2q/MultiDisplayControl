@@ -188,7 +188,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     previewLayout->addLayout(previewContent, 1);
 
     // 左侧纵向 Splitter（1:1）
-    QSplitter *leftSplitter = new QSplitter(Qt::Vertical, this);
+    leftSplitter = new QSplitter(Qt::Vertical, this);
     leftSplitter->addWidget(canvasGroup);
     leftSplitter->addWidget(previewGroup);
     leftSplitter->setStretchFactor(0, 1);
@@ -227,7 +227,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
 
     // 横向三栏 Splitter，宽度比例 36:9:1
     // 右侧软件清单宽度为自身原始宽度的三分之一，进一步压缩腾出空间
-    QSplitter *contentSplitter = new QSplitter(Qt::Horizontal, this);
+    contentSplitter = new QSplitter(Qt::Horizontal, this);
     contentSplitter->addWidget(leftSplitter);
     contentSplitter->addWidget(screenListGroup);
     contentSplitter->addWidget(libraryGroup);
@@ -235,27 +235,6 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     contentSplitter->setStretchFactor(1, 9);
     contentSplitter->setStretchFactor(2, 1);
     contentSplitter->setChildrenCollapsible(false);
-
-    // 布局完成后按比例强制分配三栏宽度及左侧上下高度，避免子控件 sizeHint 导致初始比例偏离
-    QTimer::singleShot(0, contentSplitter, [contentSplitter, leftSplitter]() {
-        const int totalW = contentSplitter->width();
-        if (totalW > 0)
-        {
-            const int totalStretch = 36 + 9 + 1;
-            const int w0 = totalW * 36 / totalStretch;
-            const int w1 = totalW * 9 / totalStretch;
-            const int w2 = totalW - w0 - w1;
-            contentSplitter->setSizes(QList<int>() << w0 << w1 << w2);
-        }
-        // 左侧纵向：屏幕布局:软件预览 = 1:1
-        const int totalH = leftSplitter->height();
-        if (totalH > 0)
-        {
-            const int topH = totalH / 2;
-            const int bottomH = totalH - topH;
-            leftSplitter->setSizes(QList<int>() << topH << bottomH);
-        }
-    });
 
     // ==================== 状态栏 ====================
     statusLabel = new QLabel(this);
@@ -399,6 +378,31 @@ void ManagementWindow::showManager()
     showNormal();
     raise();
     activateWindow();
+    // 窗口显示后强制刷新各 splitter 比例，确保 1:1 / 三栏比例正确生效
+    // 延迟到下一帧之后执行，确保布局计算已完成
+    QTimer::singleShot(20, this, &ManagementWindow::refreshSplitterSizes);
+}
+
+void ManagementWindow::refreshSplitterSizes()
+{
+    // 三栏宽度：左:中:右 = 36 : 9 : 1
+    if (contentSplitter != nullptr && contentSplitter->width() > 0)
+    {
+        const int totalW = contentSplitter->width();
+        const int totalStretch = 36 + 9 + 1;
+        const int w0 = totalW * 36 / totalStretch;
+        const int w1 = totalW * 9 / totalStretch;
+        const int w2 = totalW - w0 - w1;
+        contentSplitter->setSizes(QList<int>() << w0 << w1 << w2);
+    }
+    // 左侧纵向：屏幕布局 : 软件预览 = 1 : 1
+    if (leftSplitter != nullptr && leftSplitter->height() > 0)
+    {
+        const int totalH = leftSplitter->height();
+        const int topH = totalH / 2;
+        const int bottomH = totalH - topH;
+        leftSplitter->setSizes(QList<int>() << topH << bottomH);
+    }
 }
 
 void ManagementWindow::setStatusMessage(const QString &message, bool warning)

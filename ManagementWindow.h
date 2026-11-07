@@ -68,6 +68,14 @@ class ManagementWindow : public QWidget
      */
     void notifyApplyResult(const QStringList &warnings);
 
+    /**
+     * @brief 刷新各 splitter 的尺寸比例
+     *
+     * 在窗口显示后调用，强制按设计比例分配三栏宽度和左侧上下高度，
+     * 避免子控件 sizeHint 导致初始比例偏离。
+     */
+    void refreshSplitterSizes();
+
   signals:
     /**
      * @brief 请求把配置应用到运行时
@@ -238,7 +246,9 @@ class ManagementWindow : public QWidget
     QPushButton *reloadButton = nullptr;
     QPushButton *closeButton = nullptr;
 
-    // 布局：左4(上屏幕布局 + 下软件预览) / 中1(选中屏软件) / 右1(总软件清单)
+    // 布局：左(上屏幕布局 + 下软件预览) / 中(选中屏软件) / 右(总软件清单)
+    class QSplitter *contentSplitter = nullptr;
+    class QSplitter *leftSplitter = nullptr;
     ScreenLayoutCanvas *layoutCanvas = nullptr;
 
     // 左下软件预览
