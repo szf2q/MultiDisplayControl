@@ -218,9 +218,9 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     libraryTitle->setObjectName(QStringLiteral("groupTitle"));
     libraryLayout->addWidget(libraryTitle);
     libraryLayout->addWidget(libraryPanel, 1);
-    // 限制右侧软件清单最大宽度，避免子控件最小尺寸撑住导致比例失效
-    libraryGroup->setMaximumWidth(200);
-    libraryGroup->setMinimumWidth(120);
+    // 限制右侧软件清单宽度范围，避免子控件最小尺寸撑住导致比例失效
+    libraryGroup->setMaximumWidth(300);
+    libraryGroup->setMinimumWidth(180);
 
     // 横向三栏 Splitter，宽度比例 36:9:1
     // 右侧软件清单宽度为自身原始宽度的三分之一，进一步压缩腾出空间
