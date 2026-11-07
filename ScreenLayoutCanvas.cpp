@@ -642,10 +642,34 @@ void ScreenLayoutCanvas::refresh()
     }
     else
     {
-        m_selectedRow = -1;
-        if (screenMap != nullptr)
+        // 无有效选中项时默认选中主屏；配置中没有主屏标记则退回第一块屏
+        int defaultRow = -1;
+        if (m_config != nullptr)
         {
-            screenMap->setSelectedScreen(QString());
+            for (int i = 0; i < m_config->screenList.size(); i++)
+            {
+                if (m_config->screenList[i].primaryScreen)
+                {
+                    defaultRow = i;
+                    break;
+                }
+            }
+            if (defaultRow < 0 && !m_config->screenList.isEmpty())
+            {
+                defaultRow = 0;
+            }
+        }
+        if (defaultRow >= 0 && defaultRow < m_cards.size())
+        {
+            onSelectScreen(defaultRow);
+        }
+        else
+        {
+            m_selectedRow = -1;
+            if (screenMap != nullptr)
+            {
+                screenMap->setSelectedScreen(QString());
+            }
         }
     }
     if (screenMap != nullptr)
