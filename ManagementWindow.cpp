@@ -181,7 +181,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     infoLayout->addWidget(previewRemarkLabel);
     infoLayout->addStretch(1);
 
-    previewContent->addWidget(previewImageLabel, 0);
+    previewContent->addWidget(previewImageLabel, 2);
     previewContent->addWidget(infoWidget, 1);
 
     previewLayout->addWidget(previewTitleLabel);
@@ -236,18 +236,25 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     contentSplitter->setStretchFactor(2, 1);
     contentSplitter->setChildrenCollapsible(false);
 
-    // 布局完成后按比例强制分配三栏宽度，避免子控件 sizeHint 导致初始比例偏离
-    QTimer::singleShot(0, contentSplitter, [contentSplitter]() {
+    // 布局完成后按比例强制分配三栏宽度及左侧上下高度，避免子控件 sizeHint 导致初始比例偏离
+    QTimer::singleShot(0, contentSplitter, [contentSplitter, leftSplitter]() {
         const int totalW = contentSplitter->width();
-        if (totalW <= 0)
+        if (totalW > 0)
         {
-            return;
+            const int totalStretch = 36 + 9 + 1;
+            const int w0 = totalW * 36 / totalStretch;
+            const int w1 = totalW * 9 / totalStretch;
+            const int w2 = totalW - w0 - w1;
+            contentSplitter->setSizes(QList<int>() << w0 << w1 << w2);
         }
-        const int totalStretch = 36 + 9 + 1;
-        const int w0 = totalW * 36 / totalStretch;
-        const int w1 = totalW * 9 / totalStretch;
-        const int w2 = totalW - w0 - w1;
-        contentSplitter->setSizes(QList<int>() << w0 << w1 << w2);
+        // 左侧纵向：屏幕布局:软件预览 = 1:1
+        const int totalH = leftSplitter->height();
+        if (totalH > 0)
+        {
+            const int topH = totalH / 2;
+            const int bottomH = totalH - topH;
+            leftSplitter->setSizes(QList<int>() << topH << bottomH);
+        }
     });
 
     // ==================== 状态栏 ====================
