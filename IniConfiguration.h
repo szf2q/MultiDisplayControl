@@ -1,4 +1,4 @@
-﻿#ifndef INICONFIGURATION_H
+#ifndef INICONFIGURATION_H
 #define INICONFIGURATION_H
 
 #include <QDebug>
@@ -12,6 +12,9 @@
 
 /**
  * @brief The IniConfiguration class ini配置文件
+ *
+ * 基于 QSettings 的 ini 读写封装，工程内自带实现（IniConfiguration.cpp），
+ * 不依赖外部动态库；配置节与配置项按 QSettings 的 “节/键” 规则定位。
  */
 class IniConfiguration
 {

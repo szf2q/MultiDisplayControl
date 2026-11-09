@@ -76,6 +76,7 @@ SOURCES += \
     ExternalAppWindow.cpp \
     GlobalKeyWatcher.cpp \
     GlobalVariants.cpp \
+    IniConfiguration.cpp \
     ManagementWindow.cpp \
     ProcessUtilsWin32Impl.cpp \
     ScreenLayoutCanvas.cpp \
@@ -90,6 +91,7 @@ HEADERS += \
     FullSizeTabWidget.h \
     GlobalKeyWatcher.h \
     GlobalVariants.h \
+    IniConfiguration.h \
     ManagementWindow.h \
     ProcessFactory.h \
     ProcessInfo.h \
@@ -148,7 +150,6 @@ RCC_DIR = $$MOC_DIR
 #指定ui_*.h文件的存储路径
 UI_DIR = $$MOC_DIR
 
-LIBS += -L$$DESTDIR -ltz.utils.base
 win32{
     msvc{
         LIBS+=-luser32

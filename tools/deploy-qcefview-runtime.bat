@@ -168,10 +168,5 @@ if not exist "%TARGET%\Qt5Core.dll" (
   echo   [OK] Qt5Core.dll
 )
 
-rem tz.utils.base.dll 是项目私有依赖，windeployqt 不会处理，需要手工拷贝
-if not exist "%TARGET%\tz.utils.base.dll" (
-  echo [WARN] 未检测到 tz.utils.base.dll，请从工程依赖目录手工拷贝到目标目录
-)
-
 echo [OK] 运行期部署完成: %TARGET%
 exit /b 0

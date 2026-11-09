@@ -6,11 +6,11 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 
 支持嵌入的展示内容分三类：
 
-| 类型 | 判定条件（`config.json` 中的 `software[].path`） | 实现方式 |
-| --- | --- | --- |
-| 桌面应用程序 | 普通本地可执行文件路径（如 `xxx.exe`） | 以当前用户权限启动进程（不会弹 UAC 提权），抓取目标窗口句柄（HWND），通过纯 Win32 `SetParent` 把外部窗口嵌入本程序 |
-| 网页 | 以 `http://` 或 `https://` 开头 | 使用 `QCefView`（CEF 109 内核）加载，全进程共用 `cefCache` 缓存目录 |
-| PPT 演示文稿 | 扩展名为 `.ppt` / `.pptx` / `.pps` / `.ppsx` | 通过 ActiveQt（`QAxWidget`）调用 WPS(`KWPP.Application`) 或 PowerPoint(`PowerPoint.Application`) COM 接口，循环全屏放映后嵌入放映窗口 |
+| 类型         | 判定条件（`config.json` 中的 `software[].path`） | 实现方式                                                                                                                              |
+| ------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 桌面应用程序 | 普通本地可执行文件路径（如 `xxx.exe`）           | 以当前用户权限启动进程（不会弹 UAC 提权），抓取目标窗口句柄（HWND），通过纯 Win32 `SetParent` 把外部窗口嵌入本程序                    |
+| 网页         | 以 `http://` 或 `https://` 开头                  | 使用 `QCefView`（CEF 109 内核）加载，全进程共用 `cefCache` 缓存目录                                                                   |
+| PPT 演示文稿 | 扩展名为 `.ppt` / `.pptx` / `.pps` / `.ppsx`     | 通过 ActiveQt（`QAxWidget`）调用 WPS(`KWPP.Application`) 或 PowerPoint(`PowerPoint.Application`) COM 接口，循环全屏放映后嵌入放映窗口 |
 
 每个屏幕窗口内部以 `QTabWidget` 承载多个应用，程序启动时自动完成启动、定位、嵌入、全屏等全部操作。
 
@@ -31,15 +31,14 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 
 ## 3. 运行环境与技术栈
 
-| 项 | 说明 |
-| --- | --- |
-| 语言标准 | C++11（`CONFIG += c++11`） |
-| 框架 | Qt 5.14.2 |
-| Qt 模块 | `core` `gui` `widgets` `network` `axcontainer` |
-| 工具链 | Windows 下必须使用 MSVC（CEF 官方二进制由 MSVC 构建，MinGW 无法链接） |
-| 目标平台 | Windows 7 及以上；银河麒麟 V10（Linux 侧仅预留接口，尚未完整实现） |
-| Win32 依赖 | `user32`、`kernel32`、`psapi`、`tlhelp32` |
-| 第三方库 | `tz.utils.base`（提供 `IniConfiguration` 的 ini 读写实现，需与可执行文件同目录） |
+| 项         | 说明                                                                  |
+| ---------- | --------------------------------------------------------------------- |
+| 语言标准   | C++11（`CONFIG += c++11`）                                            |
+| 框架       | Qt 5.14.2                                                             |
+| Qt 模块    | `core` `gui` `widgets` `network` `axcontainer`                        |
+| 工具链     | Windows 下必须使用 MSVC（CEF 官方二进制由 MSVC 构建，MinGW 无法链接） |
+| 目标平台   | Windows 7 及以上；银河麒麟 V10（Linux 侧仅预留接口，尚未完整实现）    |
+| Win32 依赖 | `user32`、`kernel32`、`psapi`、`tlhelp32`                             |
 
 > 说明：网页能力依赖 `3rdparty/QCefView` 与 `3rdparty/cef`，构建前必须就位，否则工程直接构建失败；可用 `tools/build-qcefview-deps.bat` 一键生成。
 
@@ -58,7 +57,7 @@ MultiDisplayControl/
 ├── ExternalAppWindow.h/.cpp     # 核心窗口类：单屏全屏窗口 + 标签页容器 + 应用/网页/PPT 加载
 ├── ExternalAppWindow.ui         # 窗口界面（centralwidget + QTabWidget）
 ├── ScreenConfig.h               # 配置数据结构：AppConfig / ScreenConfig / MultiScreenConfig
-├── IniConfiguration.h           # ini 配置读写接口（实现由 tz.utils.base 提供）
+├── IniConfiguration.h/.cpp      # 旧版 ini 配置读写封装（基于 QSettings，工程内实现）
 ├── ProcessUtils.h               # 进程操作抽象接口（跨平台）
 ├── ProcessFactory.h             # 进程工具工厂（按平台返回具体实现）
 ├── ProcessUtilsWin32Impl.h/.cpp # Windows 平台进程实现（枚举窗口、取路径、启停进程等）
@@ -153,32 +152,32 @@ MultiDisplayControl/
 
 ### 7.1 全局配置节 `[screen]`
 
-| 配置项 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `count` | int | 0 | 屏幕配置节数量；实际生效数量以有效配置节为准 |
-| `show_index` | bool | true | 是否显示屏幕序号（浮层 + 标签页标题前缀） |
-| `sort_screen` | bool | true | 是否按屏幕几何位置排序后再与配置序号对应 |
-| `debug_mode` | bool | false | 调试模式：不启动任何应用，仅显示占位标签页并保留标签栏 |
-| `runas_administrator` | bool | false | 是否以管理员身份运行（非管理员时自动提权重启） |
-| `disable_win_key` | bool | false | 是否禁用 Windows 徽标键（`config.json` 中为 `global.disableWinKey`），开启后 Win 键及 Win+D、Win+R 等系统组合键失效 |
-| `strip_app_border` | bool | false | 是否去掉被嵌入桌面应用的标题栏与边框（`config.json` 中为 `global.stripAppBorder`）；开启后嵌入时清除 `WS_CAPTION`/`WS_BORDER` 并重新校正窗口尺寸，使客户区铺满整块屏幕，修改后需重启主程序 |
+| 配置项                | 类型 | 默认值 | 说明                                                                                                                                                                                       |
+| --------------------- | ---- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `count`               | int  | 0      | 屏幕配置节数量；实际生效数量以有效配置节为准                                                                                                                                               |
+| `show_index`          | bool | true   | 是否显示屏幕序号（浮层 + 标签页标题前缀）                                                                                                                                                  |
+| `sort_screen`         | bool | true   | 是否按屏幕几何位置排序后再与配置序号对应                                                                                                                                                   |
+| `debug_mode`          | bool | false  | 调试模式：不启动任何应用，仅显示占位标签页并保留标签栏                                                                                                                                     |
+| `runas_administrator` | bool | false  | 是否以管理员身份运行（非管理员时自动提权重启）                                                                                                                                             |
+| `disable_win_key`     | bool | false  | 是否禁用 Windows 徽标键（`config.json` 中为 `global.disableWinKey`），开启后 Win 键及 Win+D、Win+R 等系统组合键失效                                                                        |
+| `strip_app_border`    | bool | false  | 是否去掉被嵌入桌面应用的标题栏与边框（`config.json` 中为 `global.stripAppBorder`）；开启后嵌入时清除 `WS_CAPTION`/`WS_BORDER` 并重新校正窗口尺寸，使客户区铺满整块屏幕，修改后需重启主程序 |
 
 ### 7.2 屏幕配置节 `[screen-N]`（N 从 1 开始）
 
-| 配置项 | 类型 | 说明 |
-| --- | --- | --- |
-| `app_count` | int | 该屏幕下的应用数量（以实际有效应用为准重新计算） |
-| `screen_title` | string | 屏幕名称，窗口标题为 `N号屏-屏幕名称` |
-| `tab_offset_x` | int | 悬浮标签栏相对屏幕左边缘的水平偏移（像素，负值按 0 处理） |
+| 配置项         | 类型   | 说明                                                      |
+| -------------- | ------ | --------------------------------------------------------- |
+| `app_count`    | int    | 该屏幕下的应用数量（以实际有效应用为准重新计算）          |
+| `screen_title` | string | 屏幕名称，窗口标题为 `N号屏-屏幕名称`                     |
+| `tab_offset_x` | int    | 悬浮标签栏相对屏幕左边缘的水平偏移（像素，负值按 0 处理） |
 
 ### 7.3 应用配置项（`app_N_*`，N 从 1 开始）
 
-| 配置项 | 说明 |
-| --- | --- |
-| `app_N_path` | 应用路径；`http(s)://` 开头按网页处理，包含 `.ppt` 按 PPT 处理，其余按外部程序处理 |
-| `app_N_title` | 窗口标题（用于启动后匹配目标窗口，支持部分匹配），必填 |
-| `app_N_tab_name` | 标签页名称；留空时使用 `app_N_title` |
-| `app_N_startup_args` | 启动参数（按空格切分） |
+| 配置项               | 说明                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `app_N_path`         | 应用路径；`http(s)://` 开头按网页处理，包含 `.ppt` 按 PPT 处理，其余按外部程序处理 |
+| `app_N_title`        | 窗口标题（用于启动后匹配目标窗口，支持部分匹配），必填                             |
+| `app_N_tab_name`     | 标签页名称；留空时使用 `app_N_title`                                               |
+| `app_N_startup_args` | 启动参数（按空格切分）                                                             |
 
 `app_N_path` 与 `app_N_title` 任一为空时该应用会被跳过。示例：
 
@@ -217,15 +216,15 @@ app_1_startup_args=
 
 ## 8. 全局快捷键
 
-| 快捷键 | 功能 |
-| --- | --- |
-| `Alt+1` ~ `Alt+7`、`Alt+小键盘1` ~ `Alt+小键盘7` | 将第 N 号屏幕的内容切换到主屏显示（主屏与目标屏内容互换） |
-| `Alt+R` | 重新把所有窗口复位到各自的默认屏幕（不改变当前窗口内容） |
-| `Alt+F5` | 重新加载鼠标所在屏幕当前标签页的应用（外部程序重启、网页重新加载），其它标签页不受影响 |
-| `Alt+M` | 打开/隐藏多屏控制管理界面（软件清单、屏幕布局、拖拽分配、保存热应用） |
-| `Alt+F12` | 自动重启 MultiDisplayControl（结束各屏应用后重新启动自身，用于让需重启的配置立即生效） |
-| `Alt+H` | 显示/关闭快捷键说明浮层 |
-| `Alt+Q` / `Alt+F4` | 关闭所有窗口并退出程序 |
+| 快捷键                                           | 功能                                                                                   |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `Alt+1` ~ `Alt+7`、`Alt+小键盘1` ~ `Alt+小键盘7` | 将第 N 号屏幕的内容切换到主屏显示（主屏与目标屏内容互换）                              |
+| `Alt+R`                                          | 重新把所有窗口复位到各自的默认屏幕（不改变当前窗口内容）                               |
+| `Alt+F5`                                         | 重新加载鼠标所在屏幕当前标签页的应用（外部程序重启、网页重新加载），其它标签页不受影响 |
+| `Alt+M`                                          | 打开/隐藏多屏控制管理界面（软件清单、屏幕布局、拖拽分配、保存热应用）                  |
+| `Alt+F12`                                        | 自动重启 MultiDisplayControl（结束各屏应用后重新启动自身，用于让需重启的配置立即生效） |
+| `Alt+H`                                          | 显示/关闭快捷键说明浮层                                                                |
+| `Alt+Q` / `Alt+F4`                               | 关闭所有窗口并退出程序                                                                 |
 
 `Alt+Tab` / `Alt+Shift+Tab` 用于循环切换鼠标所在屏幕的标签页；只有该屏存在两个及以上标签时才由程序接管，否则放行给 Windows 自带的窗口切换。
 
@@ -244,11 +243,11 @@ make            # Windows + MinGW 使用 mingw32-make；MSVC 使用 nmake / jom
 
 构建产物输出到工程同级目录：
 
-| 平台 / 构建类型 | 输出目录 |
-| --- | --- |
-| Windows Release / Debug | `release` / `debug` |
-| 麒麟（x86_64） | `release_kylin_x86` / `debug_kylin_x86` |
-| 麒麟（arm64） | `release_kylin_arm` / `debug_kylin_arm` |
+| 平台 / 构建类型         | 输出目录                                |
+| ----------------------- | --------------------------------------- |
+| Windows Release / Debug | `release` / `debug`                     |
+| 麒麟（x86_64）          | `release_kylin_x86` / `debug_kylin_x86` |
+| 麒麟（arm64）           | `release_kylin_arm` / `debug_kylin_arm` |
 
 中间产物（moc/obj/rcc/ui）统一输出到 `<输出目录>/tmp`。
 
@@ -257,9 +256,8 @@ make            # Windows + MinGW 使用 mingw32-make；MSVC 使用 nmake / jom
 可执行文件需与以下内容同目录：
 
 1. Qt 运行库（`Qt5Core.dll`、`Qt5Gui.dll`、`Qt5Widgets.dll`、`Qt5Network.dll`、`Qt5WebEngine*`、`QtWebEngineProcess.exe` 及 `platforms/`、`resources/`、`translations/`、`styles/`、`imageformats/`、`iconengines/` 等插件目录，`release/` 目录中已随工程提供）；
-2. 第三方库 `tz.utils.base.dll`（IniConfiguration 实现）；
-3. 配置文件 `config.json`（旧部署保留 `config.ini` 时会在首次启动自动导入）；
-4. WebEngine 相关 `d3dcompiler_47.dll`、`libEGL.dll`、`libGLESv2.dll`、`opengl32sw.dll` 等。
+2. 配置文件 `config.json`（旧部署保留 `config.ini` 时会在首次启动自动导入）；
+3. WebEngine 相关 `d3dcompiler_47.dll`、`libEGL.dll`、`libGLESv2.dll`、`opengl32sw.dll` 等。
 
 ### 9.3 运行
 
