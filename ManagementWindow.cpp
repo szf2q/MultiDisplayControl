@@ -10,9 +10,11 @@
 #include <QFile>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
@@ -218,6 +220,23 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     screenSoftwareList->setDropIndicatorShown(true);
     screenSoftwareList->viewport()->setAcceptDrops(true);
     screenSoftwareList->viewport()->installEventFilter(this);
+    // Delete 键解除绑定；右键菜单同样提供「解除绑定」，兼容不便使用键盘的场景
+    screenSoftwareList->installEventFilter(this);
+    screenSoftwareList->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(screenSoftwareList, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QListWidgetItem *item = screenSoftwareList->itemAt(pos);
+        if (item == nullptr)
+        {
+            return;
+        }
+        screenSoftwareList->setCurrentItem(item);
+        QMenu menu(this);
+        QAction *removeAction = menu.addAction(QString::fromUtf8("解除绑定"));
+        if (menu.exec(screenSoftwareList->viewport()->mapToGlobal(pos)) == removeAction)
+        {
+            removeSelectedScreenSoftware();
+        }
+    });
     screenListLayout->addWidget(screenListTitle);
     // 屏幕配置卡片（序号、名称、物理屏信息、标签栏偏移）放在软件清单上方，
     // 只展示当前选中屏幕的卡片，随屏幕切换刷新内容
@@ -608,6 +627,45 @@ void ManagementWindow::onSoftwareDropped(int screenRow, const QString &softwareI
     setStatusMessage(QString::fromUtf8("已将“%1”绑定到 %2 号屏。").arg(software->name).arg(screenRow + 1));
 }
 
+void ManagementWindow::removeSelectedScreenSoftware()
+{
+    if (screenSoftwareList == nullptr || layoutCanvas == nullptr)
+    {
+        return;
+    }
+    const int screenRow = layoutCanvas->selectedRow();
+    if (screenRow < 0 || screenRow >= m_config.screenList.size())
+    {
+        return;
+    }
+    QListWidgetItem *item = screenSoftwareList->currentItem();
+    if (item == nullptr)
+    {
+        return;
+    }
+    const QString softwareId = item->data(Qt::UserRole).toString();
+    ScreenConfig &screen = m_config.screenList[screenRow];
+    for (int i = 0; i < screen.assignments.size(); i++)
+    {
+        if (screen.assignments[i].softwareId == softwareId)
+        {
+            screen.assignments.removeAt(i);
+            break;
+        }
+    }
+    screen.appCount = screen.assignments.size();
+
+    refreshScreenSoftwareList(screenRow);
+    // 解除后该软件在总清单中恢复可拖拽，绑定标记需要同步刷新
+    libraryPanel->refreshBindingMarks();
+    layoutCanvas->refresh();
+    markDirty();
+
+    const SoftwareItem *software = findSoftware(softwareId);
+    const QString name = software != nullptr ? software->name : softwareId;
+    setStatusMessage(QString::fromUtf8("已解除“%1”与 %2 号屏的绑定。").arg(name).arg(screen.screenIndex));
+}
+
 void ManagementWindow::onGlobalSettingChanged()
 {
     m_config.showIndex = showIndexCheck->isChecked();
@@ -976,6 +1034,17 @@ bool ManagementWindow::eventFilter(QObject *watched, QEvent *event)
                 dropEvent->acceptProposedAction();
                 return true;
             }
+        }
+    }
+
+    // Delete 键解除中间清单中选中软件的绑定
+    if (watched == screenSoftwareList && event->type() == QEvent::KeyPress)
+    {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Delete)
+        {
+            removeSelectedScreenSoftware();
+            return true;
         }
     }
 

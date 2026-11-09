@@ -182,6 +182,13 @@ class ManagementWindow : public QWidget
 
   private:
     /**
+     * @brief 解除中间「x号屏的软件」清单中当前选中软件的绑定
+     *
+     * 未选中软件、或当前没有选中屏幕时不做处理。
+     */
+    void removeSelectedScreenSoftware();
+
+    /**
      * @brief 标记存在未保存修改
      */
     void markDirty();
