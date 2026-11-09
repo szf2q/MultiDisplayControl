@@ -74,9 +74,11 @@ Thumbs.db
 
 # Binaries
 # --------
-# 说明：release/ 下的 Qt/CEF 运行库属于随包发布的部署产物，已由人工强制入库（git add -f）；
-# 这两条规则用于阻止新构建出的、非部署必需的 dll/exe 意外进入版本库。
-# 修改部署产物时需显式 git add -f，避免“规则说忽略、仓库里却有”的不一致继续扩大。
+# 运行目录（Qt/CEF 运行库、预览图、运行期配置）由 build_release.bat 与部署脚本生成，不入库：
+# 其中 WebEngine 的 dll 单个超过 GitHub 100MB 限制，且可用构建流程重新生成。
+/release/
+/debug/
+
 *.dll
 *.exe
 
