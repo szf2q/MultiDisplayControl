@@ -319,12 +319,31 @@ void switchTabWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow
     });
 }
 
+/**
+ * @brief 结束本程序拉起的 CEF 渲染子进程
+ *
+ * QCefView 的渲染子进程为 CefViewWing.exe，主进程退出时它不保证同步结束，
+ * 会残留占用 cefCache 目录并影响下次启动，因此在退出前显式结束。
+ * 单实例机制保证同一时刻只运行一个本程序实例，按进程名结束不会误杀其它实例的进程。
+ */
+void killCefHelperProcesses()
+{
+    ProcessUtils *processUtils = ProcessFactory::newInstance();
+    if (processUtils == nullptr)
+    {
+        return;
+    }
+    processUtils->killProcess(QStringLiteral("CefViewWing.exe"));
+    delete processUtils;
+}
+
 void closeAppsWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
 {
     QObject::connect(&watcher, &GlobalKeyWatcher::quitKeyPressed, [&winList](const QString &keyMessage) {
         qDebug() << "捕获到组合键: " << keyMessage << "，关闭所有窗体，退出程序";
         qDeleteAll(winList);
         winList.clear();
+        killCefHelperProcesses();
         QApplication::quit();
         QApplication::exit(0);
     });
@@ -355,6 +374,8 @@ void restartAppWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindo
         // 新实例随后重新启动并嵌入这些应用
         qDeleteAll(winList);
         winList.clear();
+        // 新实例此时仍在等共享内存，尚未创建 CEF 进程，可安全结束旧实例的渲染子进程
+        killCefHelperProcesses();
         QApplication::quit();
         QApplication::exit(0);
     });
@@ -558,6 +579,8 @@ int main(int argc, char *argv[])
                              qDebug() << "捕获到组合键:" << keyMessage << "，关闭所有窗体，退出程序";
                              qDeleteAll(GlobalVariants::winList);
                              GlobalVariants::winList.clear();
+                             // CEF 渲染子进程不会随窗口销毁自动退出，退出前显式结束
+                             killCefHelperProcesses();
                              QApplication::quit();
                              QApplication::exit(0);
                          });
