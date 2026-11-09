@@ -91,11 +91,10 @@ class SoftwareCapture
     /**
      * @brief 使用内置 CEF 渲染网页并抓取首屏画面
      * @param software      软件条目，path 为网页地址
-     * @param parent        触发抓图的对话框，可为空；屏幕拷贝前会临时隐藏它与管理界面
      * @param detectedTitle 输出参数，可空；成功时写入网页标题
      * @return 抓取到的图像，失败返回空图
      */
-    static QImage captureWebPage(const SoftwareItem &software, QWidget *parent, QString *detectedTitle);
+    static QImage captureWebPage(const SoftwareItem &software, QString *detectedTitle);
 
     /**
      * @brief 导出演示文稿第一页作为预览图

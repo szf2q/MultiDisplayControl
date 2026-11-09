@@ -84,3 +84,11 @@ Thumbs.db
 /debug/tmp/
 /release/cache/
 /release/tmp/
+.screenshots/
+.idea/
+.trae/
+*/cefCache/
+
+*.log
+*.bak
+
