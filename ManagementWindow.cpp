@@ -4,6 +4,8 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QCursor>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QEvent>
 #include <QFile>
 #include <QGuiApplication>
@@ -12,6 +14,7 @@
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QScreen>
@@ -210,6 +213,11 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     screenSoftwareList = new QListWidget(screenListGroup);
     screenSoftwareList->setSelectionMode(QAbstractItemView::SingleSelection);
     screenSoftwareList->setIconSize(QSize(64, 36));
+    // 接收软件清单拖入：拖到中间清单即绑定到当前选中的屏幕
+    screenSoftwareList->setAcceptDrops(true);
+    screenSoftwareList->setDropIndicatorShown(true);
+    screenSoftwareList->viewport()->setAcceptDrops(true);
+    screenSoftwareList->viewport()->installEventFilter(this);
     screenListLayout->addWidget(screenListTitle);
     // 屏幕配置卡片（序号、名称、物理屏信息、标签栏偏移）放在软件清单上方，
     // 只展示当前选中屏幕的卡片，随屏幕切换刷新内容
@@ -939,5 +947,37 @@ bool ManagementWindow::eventFilter(QObject *watched, QEvent *event)
     {
         applyPreviewPixmap();
     }
+
+    // 中间「x号屏的软件」清单接收软件清单拖入，绑定到当前选中屏幕
+    if (screenSoftwareList != nullptr && watched == screenSoftwareList->viewport())
+    {
+        if (event->type() == QEvent::DragEnter || event->type() == QEvent::DragMove)
+        {
+            QDragMoveEvent *dragEvent = static_cast<QDragMoveEvent *>(event);
+            if (dragEvent->mimeData()->hasFormat(MDC_SOFTWARE_MIME))
+            {
+                dragEvent->acceptProposedAction();
+                return true;
+            }
+        }
+        else if (event->type() == QEvent::Drop)
+        {
+            QDropEvent *dropEvent = static_cast<QDropEvent *>(event);
+            if (dropEvent->mimeData()->hasFormat(MDC_SOFTWARE_MIME))
+            {
+                const QString softwareId = QString::fromUtf8(dropEvent->mimeData()->data(MDC_SOFTWARE_MIME));
+                // 按落点所在行插入，落在空白处时追加到末尾
+                const QModelIndex index = screenSoftwareList->indexAt(dropEvent->pos());
+                const int insertRow = index.isValid() ? index.row() : screenSoftwareList->count();
+                if (layoutCanvas != nullptr)
+                {
+                    onSoftwareDropped(layoutCanvas->selectedRow(), softwareId, insertRow);
+                }
+                dropEvent->acceptProposedAction();
+                return true;
+            }
+        }
+    }
+
     return QWidget::eventFilter(watched, event);
 }
