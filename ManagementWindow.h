@@ -182,11 +182,13 @@ class ManagementWindow : public QWidget
 
   private:
     /**
-     * @brief 解除中间「x号屏的软件」清单中当前选中软件的绑定
+     * @brief 解除指定软件与当前选中屏幕的绑定
      *
-     * 未选中软件、或当前没有选中屏幕时不做处理。
+     * 由中间清单的“拖出条目”与“点击右侧 × 图标”触发；当前无选中屏幕或软件未绑定时不做处理。
+     *
+     * @param softwareId 要解除绑定的软件 id
      */
-    void removeSelectedScreenSoftware();
+    void unbindScreenSoftware(const QString &softwareId);
 
     /**
      * @brief 标记存在未保存修改

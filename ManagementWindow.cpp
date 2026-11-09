@@ -4,30 +4,209 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QCursor>
+#include <QDrag>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QEvent>
 #include <QFile>
 #include <QGuiApplication>
 #include <QHBoxLayout>
-#include <QKeyEvent>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
-#include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPushButton>
 #include <QScreen>
 #include <QSplitter>
 #include <QStyle>
+#include <QStyledItemDelegate>
 #include <QTimer>
 #include <QVBoxLayout>
+
+#include <functional>
 
 #include "ConfigStore.h"
 #include "ScreenLayoutCanvas.h"
 #include "SoftwareLibraryPanel.h"
+
+namespace
+{
+    /** @brief 从中间清单拖出软件时使用的 MIME，仅用于识别拖动来源，不提供给任何接收方 */
+    const char kAssignmentMime[] = "application/x-mdc-assignment-id";
+    /** @brief 中间清单条目右侧解除绑定图标占用的宽度（含图标与留白） */
+    const int kUnbindAreaWidth = 26;
+    /** @brief 解除绑定图标的绘制边长 */
+    const int kUnbindIconSize = 16;
+
+    /**
+     * @brief 计算条目内解除绑定图标的矩形
+     *
+     * 绘制与点击命中判定共用同一套几何，避免图标画在一处、点击响应在另一处。
+     *
+     * @param itemRect 条目矩形（视口坐标）
+     * @return 图标矩形
+     */
+    QRect unbindIconRect(const QRect &itemRect)
+    {
+        return QRect(itemRect.right() - kUnbindAreaWidth + (kUnbindAreaWidth - kUnbindIconSize) / 2,
+                     itemRect.center().y() - kUnbindIconSize / 2, kUnbindIconSize, kUnbindIconSize);
+    }
+
+    /**
+     * @brief 中间「x号屏的软件」清单的条目绘制代理
+     *
+     * 在默认样式（背景、选中态、缩略图）基础上，为文本右侧留出解除绑定图标的位置，
+     * 并绘制 × 图标；点击响应由清单控件的鼠标事件处理。
+     */
+    class AssignmentItemDelegate : public QStyledItemDelegate
+    {
+      public:
+        /**
+         * @brief 构造函数
+         * @param parent 父对象
+         */
+        explicit AssignmentItemDelegate(QObject *parent = nullptr) : QStyledItemDelegate(parent)
+        {
+        }
+
+        /**
+         * @brief 绘制条目：背景与缩略图交给样式，文本与解除绑定图标自行绘制
+         * @param painter 绘制设备
+         * @param option  条目样式选项
+         * @param index   模型索引
+         */
+        void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+        {
+            QStyleOptionViewItem opt = option;
+            initStyleOption(&opt, index);
+            const QString text = opt.text;
+            // 清空文本后交给样式绘制，避免样式再画一遍文本与自绘内容重叠
+            opt.text.clear();
+            const QWidget *widget = option.widget;
+            QStyle *style = (widget != nullptr) ? widget->style() : QApplication::style();
+            style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);
+
+            QRect textRect = style->subElementRect(QStyle::SE_ItemViewItemText, &opt, widget);
+            if (textRect.isEmpty())
+            {
+                return;
+            }
+            // 右侧为解除绑定图标留白，文本在剩余区域内省略显示
+            textRect.setRight(textRect.right() - kUnbindAreaWidth);
+
+            painter->save();
+            const bool selected = (opt.state & QStyle::State_Selected) != 0;
+            painter->setPen(selected ? QColor(Qt::white) : QColor(0xd7, 0xe9, 0xff));
+            painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter,
+                              opt.fontMetrics.elidedText(text, Qt::ElideRight, textRect.width()));
+
+            QFont iconFont = opt.font;
+            iconFont.setPixelSize(14);
+            iconFont.setBold(true);
+            painter->setFont(iconFont);
+            painter->setPen(selected ? QColor(Qt::white) : QColor(0x8a, 0xa6, 0xc4));
+            painter->drawText(unbindIconRect(option.rect), Qt::AlignCenter, QString::fromUtf8("✕"));
+            painter->restore();
+        }
+    };
+
+    /**
+     * @brief 中间「x号屏的软件」清单控件
+     *
+     * 除展示外提供两种解除绑定方式：
+     *  - 把条目拖到清单之外松开（未落到任何接收方）；
+     *  - 点击条目右侧的 × 图标。
+     */
+    class AssignmentListWidget : public QListWidget
+    {
+      public:
+        /**
+         * @brief 构造函数
+         * @param parent 父窗口
+         */
+        explicit AssignmentListWidget(QWidget *parent = nullptr) : QListWidget(parent)
+        {
+        }
+
+        /** 拖出清单并松手后的回调，参数为软件 id */
+        std::function<void(const QString &)> dragOutHandler;
+        /** 点击条目右侧解除绑定图标后的回调，参数为软件 id */
+        std::function<void(const QString &)> unbindHandler;
+
+      protected:
+        /**
+         * @brief 自定义拖拽：拖出清单即解除绑定
+         *
+         * 使用专用 MIME，本清单与右侧软件清单都不会接收，因此拖动结果恒为忽略；
+         * 再按松手位置判断是否真的拖出了清单，拖回清单内视为取消，不解除绑定。
+         *
+         * @param supportedActions 视图支持的放置动作（未使用）
+         */
+        void startDrag(Qt::DropActions supportedActions) override
+        {
+            Q_UNUSED(supportedActions);
+            QListWidgetItem *item = currentItem();
+            if (item == nullptr)
+            {
+                return;
+            }
+            const QString softwareId = item->data(Qt::UserRole).toString();
+            if (softwareId.isEmpty())
+            {
+                return;
+            }
+
+            QDrag drag(this);
+            QMimeData *data = new QMimeData();
+            data->setData(kAssignmentMime, softwareId.toUtf8());
+            drag.setMimeData(data);
+            const QPixmap previewPixmap = viewport()->grab(visualItemRect(item));
+            if (!previewPixmap.isNull())
+            {
+                // 半尺寸拖动图，避免遮挡鼠标落点判断
+                drag.setPixmap(previewPixmap.scaled(previewPixmap.size() / 2, Qt::KeepAspectRatio,
+                                                   Qt::SmoothTransformation));
+            }
+            drag.exec(Qt::MoveAction);
+
+            if (dragOutHandler != nullptr && !rect().contains(mapFromGlobal(QCursor::pos())))
+            {
+                dragOutHandler(softwareId);
+            }
+        }
+
+        /**
+         * @brief 点击条目右侧区域时立即解除绑定，其余情况交给基类处理
+         * @param event 鼠标事件
+         */
+        void mousePressEvent(QMouseEvent *event) override
+        {
+            if (event->button() == Qt::LeftButton)
+            {
+                const QModelIndex index = indexAt(event->pos());
+                if (index.isValid())
+                {
+                    const QRect itemRect = visualRect(index);
+                    // 命中判定覆盖整个右侧留白区域，比图标本身大，便于点击
+                    if (event->pos().x() >= itemRect.right() - kUnbindAreaWidth && unbindHandler != nullptr)
+                    {
+                        const QString softwareId = index.data(Qt::UserRole).toString();
+                        if (!softwareId.isEmpty())
+                        {
+                            unbindHandler(softwareId);
+                            return;
+                        }
+                    }
+                }
+            }
+            QListWidget::mousePressEvent(event);
+        }
+    };
+}  // namespace
+
 
 ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
 {
@@ -212,31 +391,23 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     screenListLayout->setContentsMargins(10, 10, 10, 10);
     screenListTitle = new QLabel(QString::fromUtf8("选中屏幕的软件"), screenListGroup);
     screenListTitle->setObjectName(QStringLiteral("groupTitle"));
-    screenSoftwareList = new QListWidget(screenListGroup);
+    // 中间清单使用自定义控件：支持拖出解除绑定、点击条目右侧 × 解除绑定
+    AssignmentListWidget *assignmentList = new AssignmentListWidget(screenListGroup);
+    screenSoftwareList = assignmentList;
     screenSoftwareList->setSelectionMode(QAbstractItemView::SingleSelection);
     screenSoftwareList->setIconSize(QSize(64, 36));
+    // 条目右侧绘制解除绑定图标，绘制与点击命中共用同一几何
+    screenSoftwareList->setItemDelegate(new AssignmentItemDelegate(screenSoftwareList));
+    // 允许拖出条目：拖到清单外松手即解除绑定
+    screenSoftwareList->setDragEnabled(true);
+    screenSoftwareList->setDragDropMode(QAbstractItemView::DragDrop);
     // 接收软件清单拖入：拖到中间清单即绑定到当前选中的屏幕
     screenSoftwareList->setAcceptDrops(true);
     screenSoftwareList->setDropIndicatorShown(true);
     screenSoftwareList->viewport()->setAcceptDrops(true);
     screenSoftwareList->viewport()->installEventFilter(this);
-    // Delete 键解除绑定；右键菜单同样提供「解除绑定」，兼容不便使用键盘的场景
-    screenSoftwareList->installEventFilter(this);
-    screenSoftwareList->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(screenSoftwareList, &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
-        QListWidgetItem *item = screenSoftwareList->itemAt(pos);
-        if (item == nullptr)
-        {
-            return;
-        }
-        screenSoftwareList->setCurrentItem(item);
-        QMenu menu(this);
-        QAction *removeAction = menu.addAction(QString::fromUtf8("解除绑定"));
-        if (menu.exec(screenSoftwareList->viewport()->mapToGlobal(pos)) == removeAction)
-        {
-            removeSelectedScreenSoftware();
-        }
-    });
+    assignmentList->dragOutHandler = [this](const QString &softwareId) { unbindScreenSoftware(softwareId); };
+    assignmentList->unbindHandler = [this](const QString &softwareId) { unbindScreenSoftware(softwareId); };
     screenListLayout->addWidget(screenListTitle);
     // 屏幕配置卡片（序号、名称、物理屏信息、标签栏偏移）放在软件清单上方，
     // 只展示当前选中屏幕的卡片，随屏幕切换刷新内容
@@ -627,9 +798,9 @@ void ManagementWindow::onSoftwareDropped(int screenRow, const QString &softwareI
     setStatusMessage(QString::fromUtf8("已将“%1”绑定到 %2 号屏。").arg(software->name).arg(screenRow + 1));
 }
 
-void ManagementWindow::removeSelectedScreenSoftware()
+void ManagementWindow::unbindScreenSoftware(const QString &softwareId)
 {
-    if (screenSoftwareList == nullptr || layoutCanvas == nullptr)
+    if (screenSoftwareList == nullptr || layoutCanvas == nullptr || softwareId.isEmpty())
     {
         return;
     }
@@ -638,12 +809,6 @@ void ManagementWindow::removeSelectedScreenSoftware()
     {
         return;
     }
-    QListWidgetItem *item = screenSoftwareList->currentItem();
-    if (item == nullptr)
-    {
-        return;
-    }
-    const QString softwareId = item->data(Qt::UserRole).toString();
     ScreenConfig &screen = m_config.screenList[screenRow];
     for (int i = 0; i < screen.assignments.size(); i++)
     {
@@ -1034,17 +1199,6 @@ bool ManagementWindow::eventFilter(QObject *watched, QEvent *event)
                 dropEvent->acceptProposedAction();
                 return true;
             }
-        }
-    }
-
-    // Delete 键解除中间清单中选中软件的绑定
-    if (watched == screenSoftwareList && event->type() == QEvent::KeyPress)
-    {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-        if (keyEvent->key() == Qt::Key_Delete)
-        {
-            removeSelectedScreenSoftware();
-            return true;
         }
     }
 
