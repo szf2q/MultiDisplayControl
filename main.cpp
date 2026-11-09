@@ -515,6 +515,18 @@ int main(int argc, char *argv[])
         QObject::connect(&manager, &ManagementWindow::screenHighlightChanged, &runtime,
                          [&runtime](int screenIndex) { runtime.highlightScreen(screenIndex); });
 
+        // 配置中没有任何已分配应用时，启动后自动打开配置管理界面，便于直接完成首次配置
+        bool hasAssignedApp = false;
+        for (int i = 0; i < config.screenList.size() && !hasAssignedApp; i++)
+        {
+            hasAssignedApp = (config.screenList[i].appCount > 0);
+        }
+        if (!hasAssignedApp)
+        {
+            qDebug() << "no software assigned, open management window";
+            QTimer::singleShot(0, [&manager]() { manager.showManager(); });
+        }
+
         QTimer::singleShot(500, [=]() { reloadScreen(GlobalVariants::winList); });
         return a.exec();
     }

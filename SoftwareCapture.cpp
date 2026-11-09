@@ -4,6 +4,7 @@
 
 #include <QCefView.h>
 #include <QAxObject>
+#include <QApplication>
 #include <QCursor>
 #include <QCoreApplication>
 #include <QDir>
@@ -742,7 +743,7 @@ bool SoftwareCapture::capturePreview(const SoftwareItem &software, const QString
     QImage image;
     if (software.type == QStringLiteral("web"))
     {
-        image = captureWebPage(software, detectedTitle);
+        image = captureWebPage(software, parent, detectedTitle);
     }
     else if (software.type == QStringLiteral("ppt"))
     {
@@ -845,7 +846,7 @@ QImage SoftwareCapture::captureLaunchedWindow(const SoftwareItem &software, QWid
 #endif
 }
 
-QImage SoftwareCapture::captureWebPage(const SoftwareItem &software, QString *detectedTitle)
+QImage SoftwareCapture::captureWebPage(const SoftwareItem &software, QWidget *parent, QString *detectedTitle)
 {
 #ifdef Q_OS_WIN
     if (!software.path.startsWith(QStringLiteral("http://")) && !software.path.startsWith(QStringLiteral("https://")))
@@ -916,11 +917,50 @@ QImage SoftwareCapture::captureWebPage(const SoftwareItem &software, QString *de
     QImage image = grabWindowImage(reinterpret_cast<HWND>(cefView->winId()));
     if (image.isNull() || isBlankImage(image))
     {
+        // 屏幕拷贝要求预览窗真实可见：管理界面与触发抓图的对话框都是置顶窗口，会盖住居中的
+        // 预览窗，截到的就会是管理界面本身。抓图期间临时隐藏它们，抓完立即恢复。
+        QWidget *dialogWindow = (parent != nullptr) ? parent->window() : nullptr;
+        QWidget *managerWindow = nullptr;
+        const QWidgetList topLevels = QApplication::topLevelWidgets();
+        for (int i = 0; i < topLevels.size(); i++)
+        {
+            if (topLevels[i]->objectName() == QLatin1String("managementWindow"))
+            {
+                managerWindow = topLevels[i];
+                break;
+            }
+        }
+
+        const bool dialogVisible = dialogWindow != nullptr && dialogWindow->isVisible();
+        const bool managerVisible = managerWindow != nullptr && managerWindow->isVisible();
+        if (dialogVisible)
+        {
+            dialogWindow->hide();
+        }
+        if (managerVisible)
+        {
+            managerWindow->hide();
+        }
+
+        holder.show();
         holder.raise();
-        SetForegroundWindow(reinterpret_cast<HWND>(holder.winId()));
+        // 强制排到置顶窗口带的最上层，避免仍被其它置顶窗口遮挡
+        SetWindowPos(reinterpret_cast<HWND>(holder.winId()), HWND_TOPMOST, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         QThread::msleep(300);
         image = grabScreenRegion(holder.frameGeometry());
+
+        if (managerVisible)
+        {
+            managerWindow->show();
+        }
+        if (dialogVisible)
+        {
+            dialogWindow->show();
+            dialogWindow->activateWindow();
+        }
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     }
     holder.hide();
     return image;
