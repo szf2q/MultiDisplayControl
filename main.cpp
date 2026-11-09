@@ -1,8 +1,10 @@
 #include <QApplication>
 
 #include <windows.h>
+#include <tlhelp32.h>
 #include <QDebug>
 #include <QDir>
+#include <QFileInfo>
 #include <QMap>
 #include <QMessageBox>
 #include <QNetworkProxyFactory>
@@ -23,6 +25,50 @@
 #include "ManagementWindow.h"
 #include "ScreenConfig.h"
 #include "ShortcutHelpDialog.h"
+
+namespace
+{
+    /**
+     * @brief 检查是否存在同名的其它进程（不含当前进程）
+     *
+     * 用于识别残留的单实例共享内存：共享内存由内核对象承载，若句柄被孤儿进程持有，
+     * 即使本程序已退出，QSharedMemory::create 仍会返回“已存在”，从而误报“程序已在运行”。
+     *
+     * @return 存在同名进程（按可执行文件名比较，忽略大小写）返回 true；
+     *         无法枚举进程时返回 true，保持单实例保护不被绕过
+     */
+    bool otherInstanceProcessRunning()
+    {
+        const QString selfName = QFileInfo(QCoreApplication::applicationFilePath()).fileName();
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot == INVALID_HANDLE_VALUE)
+        {
+            return true;
+        }
+
+        PROCESSENTRY32W entry;
+        entry.dwSize = sizeof(entry);
+        const DWORD selfPid = GetCurrentProcessId();
+        bool found = false;
+        if (Process32FirstW(snapshot, &entry) != FALSE)
+        {
+            do
+            {
+                if (entry.th32ProcessID == selfPid)
+                {
+                    continue;
+                }
+                if (selfName.compare(QString::fromWCharArray(entry.szExeFile), Qt::CaseInsensitive) == 0)
+                {
+                    found = true;
+                    break;
+                }
+            } while (Process32NextW(snapshot, &entry) != FALSE);
+        }
+        CloseHandle(snapshot);
+        return found;
+    }
+}  // namespace
 void setAppStyle()
 {
     QFile file(":/qss/dark.css");
@@ -392,16 +438,28 @@ int main(int argc, char *argv[])
         // 提权时父进程会立即退出，若提前占用共享内存，被拉起的提权子进程会误判为“已运行”。
         QSharedMemory singleInstanceGuard("MultiDisplayControl.SingleInstance");
         bool guardCreated = singleInstanceGuard.create(1);
-        if (!guardCreated && a.arguments().contains(QStringLiteral("--restart")))
+        if (!guardCreated)
         {
-            // 自动重启时新旧实例会短暂并存：旧实例需要先结束外部程序再退出，
-            // 这里轮询等待共享内存释放（最多 15 秒），避免新实例误判“程序已在运行”
-            for (int i = 0; i < 75 && !guardCreated; i++)
+            // 旧实例按 Alt+Q 退出后进程可能仍在做 CEF 收尾与外部程序清理，
+            // 共享内存要等进程真正结束才释放：自动重启时新旧实例短暂并存，等待 15 秒；
+            // 普通启动等待 5 秒，避免刚退出就重新打开时误报“程序已在运行”
+            const bool restartLaunch = a.arguments().contains(QStringLiteral("--restart"));
+            const int waitRounds = restartLaunch ? 75 : 25;
+            for (int i = 0; i < waitRounds && !guardCreated; i++)
             {
                 Sleep(200);
                 guardCreated = singleInstanceGuard.create(1);
             }
         }
+#ifdef Q_OS_WIN
+        if (!guardCreated && !otherInstanceProcessRunning())
+        {
+            // 已确认没有同名进程在运行，共享内存是残留的内核对象（被孤儿句柄持有），
+            // 直接继续启动，避免程序永久无法打开
+            qWarning() << "stale single-instance shared memory detected, continue startup";
+            guardCreated = true;
+        }
+#endif
         if (!guardCreated)
         {
             qDebug() << "another instance is running, error = " << singleInstanceGuard.errorString();
