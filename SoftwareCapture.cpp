@@ -4,6 +4,7 @@
 
 #include <QCefView.h>
 #include <QAxObject>
+#include <QApplication>
 #include <QCursor>
 #include <QCoreApplication>
 #include <QDir>
@@ -916,16 +917,46 @@ QImage SoftwareCapture::captureWebPage(const SoftwareItem &software, QString *de
     QImage image = grabWindowImage(reinterpret_cast<HWND>(cefView->winId()));
     if (image.isNull() || isBlankImage(image))
     {
-        // 屏幕拷贝要求预览窗位于最上层。管理界面与触发抓图的对话框都是置顶窗口，而预览窗
-        // 设置了不激活样式，SetForegroundWindow 无法把它提到最前，必须用 SetWindowPos
-        // 强制插到置顶窗口带的最上层，否则截到的会是盖在上面的管理界面
+        // 屏幕拷贝要求预览窗真实可见。不能用 Qt 的 hide()：应用级模态对话框隐藏后仍阻塞输入，
+        // 会出现弹框看似关闭、管理界面无法操作的问题。这里用 Win32 ShowWindow 临时隐藏本程序
+        // 其它顶层窗口，Qt 侧状态不变，抓图后原样显示并恢复前台窗口。
+        const HWND foregroundBefore = GetForegroundWindow();
+        QList<HWND> hiddenWindows;
+        const QWidgetList topLevels = QApplication::topLevelWidgets();
+        for (int i = 0; i < topLevels.size(); i++)
+        {
+            QWidget *widget = topLevels[i];
+            if (widget == &holder || !widget->isWindow() || !widget->isVisible())
+            {
+                continue;
+            }
+            HWND hwnd = reinterpret_cast<HWND>(widget->winId());
+            if (hwnd != nullptr && IsWindowVisible(hwnd))
+            {
+                ShowWindow(hwnd, SW_HIDE);
+                hiddenWindows.append(hwnd);
+            }
+        }
+
         holder.show();
         holder.raise();
+        // 插到置顶窗口带最上层，避免被其它程序的置顶窗口遮挡
         SetWindowPos(reinterpret_cast<HWND>(holder.winId()), HWND_TOPMOST, 0, 0, 0, 0,
                      SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
         QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         QThread::msleep(300);
         image = grabScreenRegion(holder.frameGeometry());
+
+        for (int i = hiddenWindows.size() - 1; i >= 0; i--)
+        {
+            ShowWindow(hiddenWindows[i], SW_SHOW);
+        }
+        // 恢复抓图前的前台窗口，保证模态对话框重新获得焦点
+        if (foregroundBefore != nullptr && IsWindow(foregroundBefore))
+        {
+            SetForegroundWindow(foregroundBefore);
+        }
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     }
     holder.hide();
     return image;
