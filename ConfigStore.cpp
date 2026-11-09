@@ -3,15 +3,52 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QSaveFile>
+#include <QScreen>
 #include <QUuid>
 
 #include "IniConfiguration.h"
+
+namespace
+{
+    /**
+     * @brief 生成首次运行时的默认配置
+     *
+     * 按当前连接的物理屏各生成一块屏的配置，序号按物理屏顺序从 1 开始，
+     * 不预置任何软件分配。这样配置文件缺失时程序仍能正常启动并显示屏幕窗口，
+     * 后续可在管理界面里继续配置。
+     *
+     * @return 默认配置，物理屏数量为 0 时返回空屏幕列表的配置
+     */
+    MultiScreenConfig buildDefaultConfig()
+    {
+        MultiScreenConfig config;
+        const QList<QScreen *> screens = QGuiApplication::screens();
+        for (int i = 0; i < screens.size(); i++)
+        {
+            ScreenConfig screen;
+            screen.id = ConfigStore::makeScreenId();
+            screen.displayName = screens[i]->name();
+            screen.geometry = screens[i]->geometry();
+            screen.primaryScreen = (screens[i] == QGuiApplication::primaryScreen());
+            screen.screenIndex = i + 1;
+            screen.showIndex = config.showIndex;
+            screen.sortScreen = config.sortScreen;
+            screen.debugMode = config.debugMode;
+            screen.stripAppBorder = config.stripAppBorder;
+            screen.tabOffsetX = 0;
+            config.screenList.append(screen);
+        }
+        config.count = config.screenList.size();
+        return config;
+    }
+}  // namespace
 
 QString ConfigStore::jsonPath(const QString &dir)
 {
@@ -172,11 +209,33 @@ bool ConfigStore::load(const QString &dir, MultiScreenConfig *config, QString *e
     const QString iniFile = iniPath(dir);
     if (!QFile::exists(iniFile))
     {
-        if (error != nullptr)
+        // config.json 存在但读取失败：保留原文件，按原错误返回，避免覆盖用户数据
+        if (QFile::exists(jsonFile))
         {
-            *error = jsonError.isEmpty() ? QString::fromUtf8("未找到配置文件 %1").arg(jsonFile) : jsonError;
+            if (error != nullptr)
+            {
+                *error = jsonError.isEmpty()
+                             ? QString::fromUtf8("无法读取配置文件 %1").arg(jsonFile)
+                             : jsonError;
+            }
+            return false;
         }
-        return false;
+
+        // 首次运行：config.json 与旧版 config.ini 都不存在，按当前物理屏生成默认配置并落盘，
+        // 避免程序因缺少配置直接退出
+        MultiScreenConfig defaultConfig = buildDefaultConfig();
+        QString writeError;
+        if (!writeJson(jsonFile, defaultConfig, &writeError))
+        {
+            if (error != nullptr)
+            {
+                *error = QString::fromUtf8("创建默认配置失败：%1").arg(writeError);
+            }
+            return false;
+        }
+        qWarning() << "config.json not found, created default config:" << jsonFile;
+        *config = defaultConfig;
+        return true;
     }
 
     *config = MultiScreenConfig();
