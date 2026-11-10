@@ -156,7 +156,7 @@ void ShortcutHelpDialog::buildUi()
     grid->setColumnStretch(1, 1);
 
     addShortcutRow(grid, 0, QStringLiteral("Alt + M"),
-                   textUtf8("显示 / 关闭多屏控制管理界面（软件清单、屏幕布局与分配）"));
+                   textUtf8("显示 / 关闭屏立方管理界面（软件清单、屏幕布局与分配）"));
     addShortcutRow(grid, 1, QStringLiteral("Alt + H"),
                    textUtf8("显示 / 关闭本快捷键说明"));
     addShortcutRow(grid, 2, QStringLiteral("Alt + R"),
@@ -170,7 +170,7 @@ void ShortcutHelpDialog::buildUi()
     addShortcutRow(grid, 6, textUtf8("Alt + Tab\nAlt + Shift + Tab"),
                    textUtf8("切换鼠标所在屏幕的标签页：向后 / 向前循环切换"));
     addShortcutRow(grid, 7, QStringLiteral("Alt + F12"),
-                   textUtf8("自动重启 MultiDisplayControl（结束各屏应用后重新启动自身）"));
+                   textUtf8("自动重启屏立方（结束各屏应用后重新启动自身）"));
 
     cardLayout->addLayout(grid);
     cardLayout->addStretch();

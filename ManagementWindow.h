@@ -19,7 +19,7 @@ class ScreenLayoutCanvas;
 class SoftwareLibraryPanel;
 
 /**
- * @brief 多屏控制管理主窗口
+ * @brief 屏立方（ScreenCube）管理主窗口
  *
  * 通过 Alt+M 显示/隐藏，负责：
  *  - 汇总软件清单与屏幕布局两个面板的编辑结果；

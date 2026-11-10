@@ -484,7 +484,7 @@ int main(int argc, char *argv[])
         if (!guardCreated)
         {
             qDebug() << "another instance is running, error = " << singleInstanceGuard.errorString();
-            QMessageBox::warning(nullptr, QString::fromUtf8("多屏控制"),
+            QMessageBox::warning(nullptr, QString::fromUtf8("屏立方"),
                                  QString::fromUtf8("程序已在运行，请勿重复启动。"));
             return 0;
         }

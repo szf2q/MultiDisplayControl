@@ -210,7 +210,7 @@ namespace
 
 ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
 {
-    setWindowTitle(QString::fromUtf8("多屏控制管理"));
+    setWindowTitle(QString::fromUtf8("屏立方 ScreenCube"));
     setObjectName(QStringLiteral("managementWindow"));
     // 无边框窗口：去掉系统标题栏与阴影边框，由窗口内部的标题区承担拖动与关闭职责
     setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
@@ -228,7 +228,7 @@ ManagementWindow::ManagementWindow(QWidget *parent) : QWidget(parent)
     }
 
     // ==================== 顶部标题栏 ====================
-    titleLabel = new QLabel(QString::fromUtf8("多屏控制管理"), this);
+    titleLabel = new QLabel(QString::fromUtf8("屏立方 ScreenCube"), this);
     titleLabel->setObjectName(QStringLiteral("managerTitle"));
     QLabel *subtitleLabel = new QLabel(
         QString::fromUtf8("Alt+M 显示/隐藏 · 保存后立即热应用（调试模式、管理员权限需重启主程序）"), this);
