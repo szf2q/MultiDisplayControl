@@ -1,11 +1,12 @@
 QT       += core gui network axcontainer
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
-# 网页渲染后端：QCefView（CEF 内核，当前锁定 CEF 109.1.18 / Chromium 109），
+# 网页渲染后端：QCefView（CEF 内核，使用上游 v1.2.1 默认的 CEF 126.2.18 / Chromium 126），
 # 可独立升级 Chromium 内核，以规避较新前端技术栈在旧内核上的兼容性问题。
 # 重要限制：
 #   1. CEF 官方 Windows 二进制由 MSVC 构建，MinGW 无法链接，Windows 下必须使用 MSVC 工具链；
-#   2. 为兼容 Windows 7，CEF 需选用 Chromium <= 109 的发行版（Chromium 110 起已放弃 Win7）；
+#   2. 目标系统为 Windows 10 及以上，Windows 7 不再支持（Chromium 110 起放弃 Win7，
+#      因此 CEF 版本不再受 Win7 限制）；
 #   3. 构建前必须预先准备好第三方依赖（3rdparty/QCefView 与 3rdparty/cef），
 #      否则构建直接失败；依赖可用 tools/build-qcefview-deps.bat 一键生成。
 

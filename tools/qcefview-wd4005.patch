@@ -1,0 +1,41 @@
+本地补丁：QCefView v1.2.1 屏蔽 PC Lint 无关的 C4005 宏重定义警告
+==============================================================
+
+用途
+----
+QCefView 上游默认使用 CEF 126，本项目仅面向 Windows 10 及以上，故不再改动
+CEF 版本（保持上游默认值），只保留这一处编译告警屏蔽。
+
+Windows 分支的 add_compile_options 开启了 /WX（警告视为错误），而该分支的
+add_definitions 会定义 OS_WINDOWS=1（CefViewCoreProtocol.h 依赖「是否定义」
+这一事实），Windows SDK 的 Shlwapi.h 在 NO_SHLWAPI_ISOS 未定义时又会
+#define OS_WINDOWS 0，两者冲突触发 C4005，导致
+src/win/details/QCefContextPrivate_win.cpp 编译失败。
+OS_WINDOWS 的取值本身无人读取（仅做 defined 判断），故屏蔽该警告是安全的。
+
+应用方法（在 QCefView 仓库根目录执行）
+--------------------------------------
+    git apply --verbose tools/qcefview-wd4005.patch
+
+改动内容
+--------
+CMakeLists.txt
+   在 Windows 分支的 add_compile_options 中追加 /wd4005。
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 5162004..cdf4186 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -141,6 +141,12 @@ elseif("${CMAKE_SYSTEM_NAME}" STREQUAL "Windows")
+   add_compile_options(
+     /W3
+     /WX
++    # 本地定制（MultiDisplayControl）：屏蔽 C4005「宏重定义」。
++    # 原因：本目录 add_definitions 会定义 OS_WINDOWS=1（CefViewCoreProtocol.h 依赖
++    #       「是否定义」这一事实），而 Windows SDK 的 Shlwapi.h 在 NO_SHLWAPI_ISOS 未定义时
++    #       又会 #define OS_WINDOWS 0，两者冲突触发 C4005；在 /WX 下该警告被当作错误导致编译失败。
++    #       该宏取值本身无人读取（仅做 defined 判断），故屏蔽该警告是安全的。
++    /wd4005
+     /M$<IF:$<BOOL:${STATIC_CRT}>,T,D>$<$<CONFIG:Debug>:d>
+   )
+   add_link_options(/DEBUG)

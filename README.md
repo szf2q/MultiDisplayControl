@@ -9,7 +9,7 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 | 类型         | 判定条件（`config.json` 中的 `software[].path`） | 实现方式                                                                                                                              |
 | ------------ | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | 桌面应用程序 | 普通本地可执行文件路径（如 `xxx.exe`）           | 以当前用户权限启动进程（不会弹 UAC 提权），抓取目标窗口句柄（HWND），通过纯 Win32 `SetParent` 把外部窗口嵌入本程序                    |
-| 网页         | 以 `http://` 或 `https://` 开头                  | 使用 `QCefView`（CEF 109 内核）加载，全进程共用 `cefCache` 缓存目录                                                                   |
+| 网页         | 以 `http://` 或 `https://` 开头                  | 使用 `QCefView`（CEF 126 内核）加载，全进程共用 `cefCache` 缓存目录                                                                   |
 | PPT 演示文稿 | 扩展名为 `.ppt` / `.pptx` / `.pps` / `.ppsx`     | 通过 ActiveQt（`QAxWidget`）调用 WPS(`KWPP.Application`) 或 PowerPoint(`PowerPoint.Application`) COM 接口，循环全屏放映后嵌入放映窗口 |
 
 每个屏幕窗口内部以 `QTabWidget` 承载多个应用，程序启动时自动完成启动、定位、嵌入、全屏等全部操作。
@@ -37,7 +37,7 @@ MultiDisplayControl 是一个基于 Qt 的**多显示器大屏统一控制程序
 | 框架       | Qt 5.14.2                                                             |
 | Qt 模块    | `core` `gui` `widgets` `network` `axcontainer`                        |
 | 工具链     | Windows 下必须使用 MSVC（CEF 官方二进制由 MSVC 构建，MinGW 无法链接） |
-| 目标平台   | Windows 7 及以上；银河麒麟 V10（Linux 侧仅预留接口，尚未完整实现）    |
+| 目标平台   | Windows 10 及以上；银河麒麟 V10（Linux 侧仅预留接口，尚未完整实现）   |
 | Win32 依赖 | `user32`、`kernel32`、`psapi`、`tlhelp32`                             |
 
 > 说明：网页能力依赖 `3rdparty/QCefView` 与 `3rdparty/cef`，构建前必须就位，否则工程直接构建失败；可用 `tools/build-qcefview-deps.bat` 一键生成。
@@ -111,7 +111,7 @@ MultiDisplayControl/
 - `reloadCurrentTab()`：故障恢复用，只重载当前选中的标签页——外部程序先结束旧进程再重新启动并原地替换标签，网页重建 `CefWebView` 并重新加载，PPT 放映保持不变（避免与现有 COM 放映实例冲突）；同屏其它标签页不受影响。
 - `startExternalProgram()` / `findProcessInfo()` / `startProcess()`：以当前用户权限启动外部程序 → 优先按 exe 路径定位窗口（进程名 + 标题匹配兜底），轮询直至稳定命中窗口（命中后连续确认 3 次）→ 以宿主控件嵌入标签页。
 - 嵌入桌面应用时默认保留其标题栏与边框；管理界面开启「嵌入应用去掉边框」后，嵌入时会清除 `WS_CAPTION`/`WS_BORDER`，并按 `AdjustWindowRectEx` 反算外框尺寸、用负偏移把客户区对齐到宿主控件左上角，使客户区完整铺满整块屏幕、四周不留黑边（不清除 `WS_THICKFRAME`，避免外部 Qt 程序崩溃）。
-- `loadWebPage()`：通过 `CefWebView`（QCefView/CEF 109）加载网页，全进程共用 `<exe目录>/cefCache` 缓存目录。
+- `loadWebPage()`：通过 `CefWebView`（QCefView/CEF 126）加载网页，全进程共用 `<exe目录>/cefCache` 缓存目录。
 - `startAndPlayPpt()` / `playPpt()`：通过 COM 自动选择 WPS 或 PowerPoint，配置循环放映参数（`LoopUntilStopped`、`AdvanceMode=1` 等）后 `Run()`，并轮询守护放映窗口，嵌入到标签页。
 - `tabIndexChanged()`：标签切换时展示对应外部窗口、隐藏其余窗口；Chrome 窗口额外通过 `ShowWindow()` 同步显隐。
 - 析构时统一结束所启动的进程并释放资源。

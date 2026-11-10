@@ -1,6 +1,6 @@
 @echo off
 rem =============================================================================
-rem QCefView v1.2.1 + CEF 109 build helper for Windows 7
+rem QCefView v1.2.1 + CEF 126 build helper for Windows 10 and newer
 rem
 rem Usage: run this file from anywhere, e.g.  tools\build-qcefview-deps.bat
 rem
@@ -9,11 +9,11 @@ rem   - Visual Studio 2019 (MSVC v142 toolset) and the Windows SDK
 rem   - Qt 5.14.2 msvc2017_64, CMake >= 3.21, Ninja and git
 rem   - the QCefView source tree must already be present under 3rdparty,
 rem     this script does NOT clone it from github.com any more
-rem   - CefViewCore / the CEF 109 SDK is still fetched once by CMake from
-rem     github.com and cef-builds.spotifycdn.com (about 105 MB)
+rem   - CefViewCore / the CEF 126 SDK is still fetched once by CMake from
+rem     github.com and cef-builds.spotifycdn.com
 rem
 rem Required by MultiDisplayControl.pro (QCefView/CEF backend is always enabled)
-rem   3rdparty\cef              CEF 109 SDK, Release\libcef.lib
+rem   3rdparty\cef              CEF 126 SDK, Release\libcef.lib
 rem   3rdparty\QCefView\lib     QCefView.lib and the other import libraries
 rem   3rdparty\QCefView\bin     QCefView.dll and the CefView\ runtime folder
 rem
@@ -32,7 +32,7 @@ set "BUILD_DIR=%TEMP%\mdc_qcef_build"
 
 set "ROOT=%~dp0.."
 set "THIRDPARTY_DIR=%ROOT%\3rdparty"
-set "PATCH_FILE=%~dp0qcefview-cef109-win7.patch"
+set "PATCH_FILE=%~dp0qcefview-wd4005.patch"
 
 if not defined VCVARS call :find_vcvars
 if defined VCVARS call :derive_vs_install
@@ -68,7 +68,7 @@ call :find_qcef_src
 if not defined QCEF_SRC goto err_qcef_src
 echo [INFO] QCefView src  : %QCEF_SRC%
 
-rem ---- 3. Patch the source for CEF 109 and the C4005 warning ----
+rem ---- 3. Patch the source to silence the C4005 warning under /WX ----
 rem Reverse check first, so running the script twice does not fail
 git -C "%QCEF_SRC%" apply --reverse --check "%PATCH_FILE%" >nul 2>&1
 if not errorlevel 1 (

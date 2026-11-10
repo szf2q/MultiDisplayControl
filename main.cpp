@@ -494,7 +494,7 @@ int main(int argc, char *argv[])
         //   1. 全进程只能有一个 QCefContext，且必须在创建任何 QCefView 之前初始化、
         //      在所有 QCefView 销毁之后析构，因此声明在 main 作用域内，生命周期覆盖整个事件循环；
         //   2. CEF 只支持全进程唯一的缓存目录，所有网页共用（不再按应用/按屏隔离缓存与 Cookie）；
-        //   3. 为兼容 Windows 7，CEF 版本需选用 Chromium <= 109 的发行版。
+        //   3. 目标系统为 Windows 10 及以上，CEF 版本不再受 Windows 7 限制，当前使用 CEF 126。
         QString cefCachePath = QDir(QApplication::applicationDirPath()).filePath("cefCache");
         QDir().mkpath(cefCachePath);
         QCefConfig cefConfig;

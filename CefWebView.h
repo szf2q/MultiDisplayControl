@@ -12,7 +12,7 @@ class QCefView;
  *       这样做的目的是：QCefView 不同版本的接口名称存在差异（例如 1.x 为 navigateToUrl()，
  *       2.x/3.x 为 loadUrl()，且工厂方法的有无也不同），升级或更换版本时只需修改本文件，
  *       不必改动业务代码。
- * @note 当前锁定的 QCefView 版本为 v1.2.1，配套 CEF 内核 109.1.18（最后一个支持 Windows 7 的版本）。
+ * @note 当前锁定的 QCefView 版本为 v1.2.1，配套 CEF 内核 126.2.18（仅支持 Windows 10 及以上）。
  * @warning 使用本类前必须先在 main() 中创建 QCefContext 完成 CEF 初始化，否则创建 QCefView 会失败。
  */
 class CefWebView : public QWidget
