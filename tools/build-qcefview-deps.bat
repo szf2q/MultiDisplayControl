@@ -1,23 +1,23 @@
 @echo off
 rem =============================================================================
-rem QCefView v1.2.1 + CEF 109??? Windows 7???????
+rem QCefView v1.2.1 + CEF 109 build helper for Windows 7
 rem
-rem ???????????  tools\build-qcefview-deps.bat
+rem Usage: run this file from anywhere, e.g.  tools\build-qcefview-deps.bat
 rem
-rem ?????
-rem   - ??? Visual Studio ?????? MSVC v142 ????? Windows SDK?
-rem   - ??? Qt 5.14.2 msvc2017_64?CMake >= 3.21?Ninja?git
+rem Requirements:
+rem   - Visual Studio 2019 (MSVC v142 toolset) and the Windows SDK
+rem   - Qt 5.14.2 msvc2017_64, CMake >= 3.21, Ninja and git
 rem   - the QCefView source tree must already be present under 3rdparty,
 rem     this script does NOT clone it from github.com any more
 rem   - CefViewCore / the CEF 109 SDK is still fetched once by CMake from
 rem     github.com and cef-builds.spotifycdn.com (about 105 MB)
 rem
 rem Required by MultiDisplayControl.pro (QCefView/CEF backend is always enabled)
-rem   3rdparty\cef              CEF 109 SDK?? Release\libcef.lib
-rem   3rdparty\QCefView\lib     QCefView.lib?????
-rem   3rdparty\QCefView\bin     QCefView.dll ? CefView\ ????
+rem   3rdparty\cef              CEF 109 SDK, Release\libcef.lib
+rem   3rdparty\QCefView\lib     QCefView.lib and the other import libraries
+rem   3rdparty\QCefView\bin     QCefView.dll and the CefView\ runtime folder
 rem
-rem ???????????????????????
+rem All toolchain paths are auto-detected, see section 0 below.
 rem =============================================================================
 setlocal
 
@@ -51,10 +51,10 @@ if not defined QT_SDK_DIR goto err_qt
 if not defined CMAKE_EXE goto err_cmake
 if not defined NINJA_DIR goto err_ninja
 
-rem ---- 1. ?? MSVC ? Ninja ???? ----
+rem ---- 1. Enter the MSVC environment and put Ninja on PATH ----
 call "%VCVARS%" >nul 2>&1
 if errorlevel 1 (
-  echo [ERROR] vcvars64.bat ?????%VCVARS%
+  echo [ERROR] vcvars64.bat failed, please check: %VCVARS%
   exit /b 1
 )
 set "PATH=%NINJA_DIR%;%PATH%"
@@ -68,47 +68,47 @@ call :find_qcef_src
 if not defined QCEF_SRC goto err_qcef_src
 echo [INFO] QCefView src  : %QCEF_SRC%
 
-rem ---- 3. ???????CEF ?? 109 + ?? C4005??????? ----
-rem ?? check ?????????????????????????
+rem ---- 3. Patch the source for CEF 109 and the C4005 warning ----
+rem Reverse check first, so running the script twice does not fail
 git -C "%QCEF_SRC%" apply --reverse --check "%PATCH_FILE%" >nul 2>&1
 if not errorlevel 1 (
-  echo [INFO] ??????????
+  echo [INFO] Patch is already applied.
 ) else (
-  echo [INFO] ?????? ...
+  echo [INFO] Applying patch ...
   git -C "%QCEF_SRC%" apply "%PATCH_FILE%"
   if errorlevel 1 (
-    echo [ERROR] ?????????? 3rdparty\QCefView ??????
+    echo [ERROR] Patch failed, please check that 3rdparty\QCefView is complete
     exit /b 1
   )
 )
 
-rem ---- 4. CMake ??????Release / x64?----
+rem ---- 4. Configure CMake, Release / x64 ----
 "%CMAKE_EXE%" -S "%QCEF_SRC%" -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPROJECT_ARCH=x86_64 -DBUILD_DEMO=OFF -DSTATIC_CRT=OFF -DQT_SDK_DIR=%QT_SDK_DIR:\=/%
 if errorlevel 1 (
-  echo [ERROR] CMake ????
+  echo [ERROR] CMake configure failed
   exit /b 1
 )
 
-rem ?? CEF ??????????????????? --parallel??????
+rem Building CEF and QCefView needs a lot of RAM, keep parallelism low
 "%CMAKE_EXE%" --build "%BUILD_DIR%" --parallel 3
 if errorlevel 1 (
-  echo [ERROR] QCefView ????
+  echo [ERROR] QCefView build failed
   exit /b 1
 )
 
-rem ---- 5. ????? .pro ????? ----
+rem ---- 5. Copy the build outputs into the folder layout used by the .pro ----
 set "CEF_SDK="
 for /d %%D in ("%BUILD_DIR%\_deps\cefviewcore-src\dep\cef_binary_*") do set "CEF_SDK=%%~fD"
 if not defined CEF_SDK (
-  echo [ERROR] ??????? CEF SDK ??
+  echo [ERROR] The built CEF SDK was not found in the build folder
   exit /b 1
 )
 
-rem CEF SDK ??????? Debug?????? Release?? tests?????????
+rem Copy the CEF SDK, skipping the Debug binaries, tests and symbols
 robocopy "%CEF_SDK%" "%ROOT%\3rdparty\cef" /E /XD Debug tests /NFL /NDL /NJH /NJS /NP
-rem QCefView ??????????
+rem Copy the QCefView import library
 robocopy "%BUILD_DIR%\output\Release\lib" "%ROOT%\3rdparty\QCefView\lib" QCefView.lib /NFL /NDL /NJH /NJS /NP
-rem QCefView ????QCefView.dll ? CefView\ ?????????
+rem Copy the QCefView runtime: QCefView.dll and the CefView\ folder
 robocopy "%BUILD_DIR%\output\Release\bin" "%ROOT%\3rdparty\QCefView\bin" /E /XF *.pdb /NFL /NDL /NJH /NJS /NP
 
 echo [OK] Dependencies are ready, run qmake and build MultiDisplayControl now.
