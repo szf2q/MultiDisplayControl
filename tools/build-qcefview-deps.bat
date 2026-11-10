@@ -7,8 +7,10 @@ rem
 rem ?????
 rem   - ??? Visual Studio ?????? MSVC v142 ????? Windows SDK?
 rem   - ??? Qt 5.14.2 msvc2017_64?CMake >= 3.21?Ninja?git
-rem   - ??? github.com??? QCefView / CefViewCore??
-rem     cef-builds.spotifycdn.com??? CEF ????? 105MB?
+rem   - the QCefView source tree must already be present under 3rdparty,
+rem     this script does NOT clone it from github.com any more
+rem   - CefViewCore / the CEF 109 SDK is still fetched once by CMake from
+rem     github.com and cef-builds.spotifycdn.com (about 105 MB)
 rem
 rem Required by MultiDisplayControl.pro (QCefView/CEF backend is always enabled)
 rem   3rdparty\cef              CEF 109 SDK?? Release\libcef.lib
@@ -29,7 +31,7 @@ rem   NINJA_DIR    folder containing ninja.exe
 set "BUILD_DIR=%TEMP%\mdc_qcef_build"
 
 set "ROOT=%~dp0.."
-set "QCEF_DIR=%ROOT%\3rdparty\QCefView"
+set "THIRDPARTY_DIR=%ROOT%\3rdparty"
 set "PATCH_FILE=%~dp0qcefview-cef109-win7.patch"
 
 if not defined VCVARS call :find_vcvars
@@ -57,24 +59,23 @@ if errorlevel 1 (
 )
 set "PATH=%NINJA_DIR%;%PATH%"
 
-rem ---- 2. ?? QCefView v1.2.1 ??????????----
-if not exist "%QCEF_DIR%\CMakeLists.txt" (
-  echo [INFO] ?? QCefView v1.2.1 ...
-  git clone --branch v1.2.1 --depth 1 https://github.com/CefView/QCefView.git "%QCEF_DIR%"
-  if errorlevel 1 (
-    echo [ERROR] QCefView ????
-    exit /b 1
-  )
-)
+rem ---- 2. Locate the QCefView source under 3rdparty (nothing is downloaded) ----
+rem The source tree must be prepared in advance: either the default
+rem 3rdparty\QCefView folder, or any folder at 3rdparty\<dir> or
+rem 3rdparty\<dir>\<dir> whose CMakeLists.txt declares the QCefView project.
+set "QCEF_SRC="
+call :find_qcef_src
+if not defined QCEF_SRC goto err_qcef_src
+echo [INFO] QCefView src  : %QCEF_SRC%
 
 rem ---- 3. ???????CEF ?? 109 + ?? C4005??????? ----
 rem ?? check ?????????????????????????
-git -C "%QCEF_DIR%" apply --reverse --check "%PATCH_FILE%" >nul 2>&1
+git -C "%QCEF_SRC%" apply --reverse --check "%PATCH_FILE%" >nul 2>&1
 if not errorlevel 1 (
   echo [INFO] ??????????
 ) else (
   echo [INFO] ?????? ...
-  git -C "%QCEF_DIR%" apply "%PATCH_FILE%"
+  git -C "%QCEF_SRC%" apply "%PATCH_FILE%"
   if errorlevel 1 (
     echo [ERROR] ?????????? 3rdparty\QCefView ??????
     exit /b 1
@@ -82,7 +83,7 @@ if not errorlevel 1 (
 )
 
 rem ---- 4. CMake ??????Release / x64?----
-"%CMAKE_EXE%" -S "%QCEF_DIR%" -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPROJECT_ARCH=x86_64 -DBUILD_DEMO=OFF -DSTATIC_CRT=OFF -DQT_SDK_DIR=%QT_SDK_DIR:\=/%
+"%CMAKE_EXE%" -S "%QCEF_SRC%" -B "%BUILD_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPROJECT_ARCH=x86_64 -DBUILD_DEMO=OFF -DSTATIC_CRT=OFF -DQT_SDK_DIR=%QT_SDK_DIR:\=/%
 if errorlevel 1 (
   echo [ERROR] CMake ????
   exit /b 1
@@ -137,6 +138,13 @@ exit /b 1
 echo [ERROR] ninja.exe was not found.
 echo         Install Ninja or the Qt Tools component, or set NINJA_DIR to the
 echo         folder containing ninja.exe.
+exit /b 1
+
+:err_qcef_src
+echo [ERROR] QCefView source was not found under %THIRDPARTY_DIR%
+echo         Put the QCefView source tree (the folder containing
+echo         CMakeLists.txt) at 3rdparty\QCefView or at any sub folder of
+echo         3rdparty, this script no longer downloads it from GitHub.
 exit /b 1
 
 :find_vcvars
@@ -317,4 +325,37 @@ if defined NINJA_DIR goto :eof
 set "NINJA_CANDIDATE=%~dp1"
 if "%NINJA_CANDIDATE:~-1%"=="\" set "NINJA_CANDIDATE=%NINJA_CANDIDATE:~0,-1%"
 set "NINJA_DIR=%NINJA_CANDIDATE%"
+goto :eof
+
+:find_qcef_src
+rem Look for the QCefView source tree already prepared inside 3rdparty.
+rem A candidate is accepted only if its CMakeLists.txt mentions QCefView,
+rem so unrelated third party projects with their own CMakeLists are skipped.
+if not exist "%THIRDPARTY_DIR%" goto :eof
+
+rem 1) Default layout: 3rdparty\QCefView
+call :try_qcef_dir "%THIRDPARTY_DIR%\QCefView"
+if defined QCEF_SRC goto :eof
+
+rem 2) One level below: 3rdparty\<dir>
+for /d %%D in ("%THIRDPARTY_DIR%\*") do call :try_qcef_dir "%%~fD"
+if defined QCEF_SRC goto :eof
+
+rem 3) Two levels below: 3rdparty\<dir>\<dir>, e.g. 3rdparty\src\QCefView-1.2.1
+for /d %%S in ("%THIRDPARTY_DIR%\*") do call :scan_qcef_subdir "%%~fS"
+goto :eof
+
+:scan_qcef_subdir
+rem %~1 = a direct child folder of 3rdparty, search its children as well
+if defined QCEF_SRC goto :eof
+for /d %%D in ("%~1\*") do call :try_qcef_dir "%%~fD"
+goto :eof
+
+:try_qcef_dir
+rem %~1 = potential QCefView source root
+if defined QCEF_SRC goto :eof
+if not exist "%~1\CMakeLists.txt" goto :eof
+findstr /i /c:"QCefView" "%~1\CMakeLists.txt" >nul 2>&1
+if errorlevel 1 goto :eof
+set "QCEF_SRC=%~1"
 goto :eof
