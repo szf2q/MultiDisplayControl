@@ -41,10 +41,17 @@ set "SKIP_QMAKE_IF_MAKEFILE=yes"
 REM Add ATL/MFC include and lib paths (required by ActiveQt): yes / no
 set "NEED_ATLMFC=yes"
 
-REM MSVC toolset candidates, highest priority first
-set MSVC_FALLBACKS="%ProgramFiles(x86)%\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231" "%ProgramFiles(x86)%\Microsoft Visual Studio\17\BuildTools\VC\Tools\MSVC\14.40.33807" "%ProgramFiles(x86)%\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.40.33807" "E:\InstalledApplication\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.28.29333"
-REM Qt kit candidates, the folder containing bin\qmake.exe
-set QT_FALLBACKS="D:\Qt\5.14.2\msvc2017_64" "C:\Qt\5.14.2\msvc2017_64" "D:\Qt\5.15.2\msvc2019_64" "C:\Qt\5.15.2\msvc2019_64" "D:\Qt\5.12.12\msvc2017_64" "C:\Qt\5.12.12\msvc2017_64"
+REM Optional extra MSVC toolset candidates, highest priority first.
+REM Normally NOT needed: detection already covers VCINSTALLDIR,
+REM VSINSTALLDIR, the vswhere database and a scan of every drive root.
+REM Only fill this in for installs that live on a network share or on a
+REM drive that is not mounted while the build runs. Space separated.
+set "MSVC_FALLBACKS="
+REM Optional extra Qt kit candidates, the folder containing bin\qmake.exe.
+REM Normally NOT needed: detection already covers QTDIR/QT_HOME/QT_ROOT,
+REM qmake found on PATH and a scan of every drive root (both
+REM <root>\Qt\<ver>\<kit> and <root>\Qt\<ver> layouts). Space separated.
+set "QT_FALLBACKS="
 
 REM Extra environment for third-party libraries, empty means skip
 REM Directories appended to PATH, separated by semicolon
@@ -111,13 +118,29 @@ set MSVC_DIR=
 set VS_INSTALL=
 set VSWHERE_PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe
 
-REM Prefer the latest Visual Studio reported by vswhere
+REM 1) Environment of an already opened "x64 Native Tools" prompt
+if not defined VCToolsInstallDir goto vcenv_skip
+call :try_msvc "%VCToolsInstallDir%"
+:vcenv_skip
+if defined MSVC_DIR goto msvc_done
+if not defined VSINSTALLDIR goto vsenv_skip
+call :try_vs_install "%VSINSTALLDIR%"
+:vsenv_skip
+if defined MSVC_DIR goto msvc_done
+
+REM 2) Visual Studio installer database, every install, newest first.
+REM    This also finds installs that live outside Program Files.
 if not exist "%VSWHERE_PATH%" goto vswhere_skip
-for /f "usebackq delims=" %%i in (`"%VSWHERE_PATH%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul`) do call :try_vs_install "%%i"
+for /f "usebackq delims=" %%i in (`"%VSWHERE_PATH%" -all -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul`) do call :try_vs_install "%%i"
 :vswhere_skip
 if defined MSVC_DIR goto msvc_done
 
-REM Fall back to the candidate list from the CONFIG section
+REM 3) Scan every drive for custom / side-by-side install locations
+call :scan_msvc_drives
+if defined MSVC_DIR goto msvc_done
+
+REM 4) Last resort: user supplied MSVC_FALLBACKS
+if not defined MSVC_FALLBACKS goto msvc_done
 for %%p in (%MSVC_FALLBACKS%) do call :try_msvc "%%~p"
 
 :msvc_done
@@ -166,20 +189,31 @@ echo [INFO] Detecting Qt ...
 
 set QT_DIR=
 
-REM Try the candidate list from the CONFIG section
-for %%p in (%QT_FALLBACKS%) do call :try_qt "%%~p"
+REM 1) Well known environment variables, set by Qt installers and IDEs
+call :try_qt_env
 if defined QT_DIR goto qt_done
 
-REM Last resort, derive the Qt root from qmake found in PATH
+REM 2) qmake already available on PATH
 where qmake >nul 2>&1
-if errorlevel 1 goto qt_done
+if errorlevel 1 goto qt_path_skip
 for /f "delims=" %%q in ('where qmake 2^>nul') do call :try_qt_parent "%%q"
+:qt_path_skip
+if defined QT_DIR goto qt_done
+
+REM 3) Scan every drive for custom install locations
+call :scan_qt_drives
+if defined QT_DIR goto qt_done
+
+REM 4) Last resort: user supplied QT_FALLBACKS
+if not defined QT_FALLBACKS goto qt_done
+for %%p in (%QT_FALLBACKS%) do call :try_qt "%%~p"
 
 :qt_done
 if defined QT_DIR goto qt_ok
 echo [ERROR] Qt not found!
-echo         Tried the paths in QT_FALLBACKS and the PATH variable.
-echo         Install the proper Qt kit or edit QT_FALLBACKS.
+echo         Tried QTDIR/QT_HOME/QT_ROOT, qmake on PATH, a scan of all
+echo         drives and QT_FALLBACKS.
+echo         Install the proper Qt kit or add it to QT_FALLBACKS.
 pause
 exit /b 1
 :qt_ok
@@ -308,10 +342,13 @@ for /f "delims=" %%v in ('dir /b /o-n /ad "%~1\VC\Tools\MSVC" 2^>nul') do call :
 goto :eof
 
 :try_msvc
-REM Accept a candidate MSVC toolset only if cl.exe exists for the arch
+REM Accept a candidate MSVC toolset only if cl.exe exists for the arch.
+REM A trailing backslash is stripped so "dir\bin" never becomes "dir\\bin".
 if defined MSVC_DIR goto :eof
-if not exist "%~1\bin\%MSVC_HOST_DIR%\cl.exe" goto :eof
-set "MSVC_DIR=%~1"
+set "CANDIDATE=%~1"
+if "%CANDIDATE:~-1%"=="\" set "CANDIDATE=%CANDIDATE:~0,-1%"
+if not exist "%CANDIDATE%\bin\%MSVC_HOST_DIR%\cl.exe" goto :eof
+set "MSVC_DIR=%CANDIDATE%"
 goto :eof
 
 :try_sdk
@@ -324,14 +361,108 @@ set "SDK_VERSION=%~1"
 goto :eof
 
 :try_qt
-REM Accept a candidate Qt kit only if it contains bin\qmake.exe
+REM Accept a candidate Qt kit only if it contains bin\qmake.exe.
+REM A trailing backslash is stripped so "dir\bin" never becomes "dir\\bin".
 if defined QT_DIR goto :eof
-if not exist "%~1\bin\qmake.exe" goto :eof
-set "QT_DIR=%~1"
+set "CANDIDATE=%~1"
+if "%CANDIDATE:~-1%"=="\" set "CANDIDATE=%CANDIDATE:~0,-1%"
+if not exist "%CANDIDATE%\bin\qmake.exe" goto :eof
+set "QT_DIR=%CANDIDATE%"
+goto :eof
+
+:try_qt_env
+REM Try the environment variables commonly pointing at a Qt kit
+if defined QTDIR call :try_qt "%QTDIR%"
+if defined QT_DIR goto :eof
+if defined QT_HOME call :try_qt "%QT_HOME%"
+if defined QT_DIR goto :eof
+if defined QT_ROOT call :try_qt "%QT_ROOT%"
 goto :eof
 
 :try_qt_parent
 REM Derive the Qt root from a qmake.exe path by dropping bin\qmake.exe
 if defined QT_DIR goto :eof
 for %%d in ("%~dp1..") do call :try_qt "%%~fd"
+goto :eof
+
+REM ---------------- Drive scan: MSVC ----------------
+REM Looks for "<any folder>\Microsoft Visual Studio\<year>\<edition>"
+REM anywhere on the fixed drives, so VS installed to a non default
+REM folder (e.g. E:\InstalledApplication\... or a BuildTools copy)
+REM is found without editing this script.
+
+:scan_msvc_drives
+for %%d in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do call :scan_msvc_drive "%%d:"
+goto :eof
+
+:scan_msvc_drive
+REM %~1 = a drive root such as "E:"
+if defined MSVC_DIR goto :eof
+if not exist "%~1\" goto :eof
+REM <drive>:\Microsoft Visual Studio
+call :scan_msvc_root "%~1"
+REM <drive>:\<folder>\Microsoft Visual Studio
+for /d %%a in ("%~1\*") do call :scan_msvc_root "%%~fa"
+goto :eof
+
+:scan_msvc_root
+REM %~1 = a folder that may directly contain "Microsoft Visual Studio"
+if defined MSVC_DIR goto :eof
+if not exist "%~1\Microsoft Visual Studio" goto :eof
+call :scan_vs_tree "%~1\Microsoft Visual Studio"
+goto :eof
+
+:scan_vs_tree
+REM %~1 = ...\Microsoft Visual Studio, one folder per VS version
+for /d %%y in ("%~1\*") do call :scan_vs_editions "%%~fy"
+goto :eof
+
+:scan_vs_editions
+REM %~1 = ...\Microsoft Visual Studio\<version>, one folder per edition
+for /d %%e in ("%~1\*") do call :try_vs_install "%%~fe"
+goto :eof
+
+REM ---------------- Drive scan: Qt ----------------
+REM Recognises both common install layouts:
+REM   <root>\Qt\<version>\<kit>\bin\qmake.exe   (official online installer)
+REM   <root>\<version>\<kit>\bin\qmake.exe      (Qt folder matched by Qt*)
+
+:scan_qt_drives
+for %%d in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do call :scan_qt_drive "%%d:"
+REM Per user install inside the profile folder (default for the online installer)
+if not defined USERPROFILE goto :eof
+call :scan_qt_subdir "%USERPROFILE%"
+goto :eof
+
+:scan_qt_drive
+REM %~1 = a drive root such as "D:"
+if defined QT_DIR goto :eof
+if not exist "%~1\" goto :eof
+REM <drive>:\Qt and <drive>:\Qt<version>
+for /d %%q in ("%~1\Qt*") do call :scan_qt_root "%%~fq"
+REM <drive>:\<folder>\Qt and <drive>:\<folder>\Qt<version>
+for /d %%a in ("%~1\*") do call :scan_qt_subdir "%%~fa"
+goto :eof
+
+:scan_qt_subdir
+REM %~1 = a folder that may contain a Qt folder, e.g. E:\InstalledApplication
+if defined QT_DIR goto :eof
+for /d %%q in ("%~1\Qt*") do call :scan_qt_root "%%~fq"
+goto :eof
+
+:scan_qt_root
+REM %~1 = a Qt root folder or a kit folder itself
+if defined QT_DIR goto :eof
+call :try_qt "%~1"
+if defined QT_DIR goto :eof
+REM Kits first, newest version folder first
+for /f "delims=" %%v in ('dir /b /o-n /ad "%~1" 2^>nul') do call :scan_qt_version "%~1\%%v"
+goto :eof
+
+:scan_qt_version
+REM %~1 = <Qt root>\<version>, kits live one level deeper
+if defined QT_DIR goto :eof
+call :try_qt "%~1"
+if defined QT_DIR goto :eof
+for /d %%k in ("%~1\*") do call :try_qt "%%~fk"
 goto :eof
