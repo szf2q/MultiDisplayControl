@@ -113,11 +113,11 @@ if not exist "%TARGET%\MultiDisplayControl.exe" (
   goto verify
 )
 
-rem windeployqt 查找顺序：QT_BIN_DIR -> PATH -> Qt 5.14.2 默认安装位置
+rem windeployqt 查找顺序：QT_BIN_DIR -> PATH -> QTDIR/QT_HOME -> 全盘扫描 Qt 安装目录
 set "WINDEPLOYQT="
 if defined QT_BIN_DIR if exist "%QT_BIN_DIR%\windeployqt.exe" set "WINDEPLOYQT=%QT_BIN_DIR%\windeployqt.exe"
 if not defined WINDEPLOYQT for /f "delims=" %%W in ('where windeployqt.exe 2^>nul') do if not defined WINDEPLOYQT set "WINDEPLOYQT=%%W"
-if not defined WINDEPLOYQT if exist "D:\Qt\5.14.2\msvc2017_64\bin\windeployqt.exe" set "WINDEPLOYQT=D:\Qt\5.14.2\msvc2017_64\bin\windeployqt.exe"
+if not defined WINDEPLOYQT call :find_windeployqt
 
 if not defined WINDEPLOYQT (
   if /i "%QT_MODE%"=="on" (
@@ -170,3 +170,61 @@ if not exist "%TARGET%\Qt5Core.dll" (
 
 echo [OK] 运行期部署完成: %TARGET%
 exit /b 0
+
+rem =============================================================================
+rem windeployqt 自动探测子程序
+rem 说明：优先使用 QTDIR/QT_HOME，再遍历各盘符下的 Qt 安装目录
+rem       （兼容 <根>\Qt\<版本>\<kit> 与 <根>\Qt<版本>\<kit> 两种布局）
+rem =============================================================================
+
+:find_windeployqt
+if not defined WINDEPLOYQT if defined QTDIR call :try_windeployqt_bin "%QTDIR%\bin"
+if not defined WINDEPLOYQT if defined QT_HOME call :try_windeployqt_bin "%QT_HOME%\bin"
+if not defined WINDEPLOYQT for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do call :scan_wd_drive "%%D:"
+if not defined WINDEPLOYQT if defined USERPROFILE call :scan_wd_subdir "%USERPROFILE%"
+goto :eof
+
+:scan_wd_drive
+rem %~1 = 盘符根目录，例如 "D:"
+if defined WINDEPLOYQT goto :eof
+if not exist "%~1\" goto :eof
+rem <盘符>:\Qt 与 <盘符>:\Qt<版本>
+for /d %%Q in ("%~1\Qt*") do call :scan_wd_root "%%~fQ"
+rem <盘符>:\<目录>\Qt 与 <盘符>:\<目录>\Qt<版本>
+for /d %%A in ("%~1\*") do call :scan_wd_subdir "%%~fA"
+goto :eof
+
+:scan_wd_subdir
+rem %~1 = 可能包含 Qt 目录的上级目录，例如 E:\InstalledApplication
+if defined WINDEPLOYQT goto :eof
+for /d %%Q in ("%~1\Qt*") do call :scan_wd_root "%%~fQ"
+goto :eof
+
+:scan_wd_root
+rem %~1 = Qt 根目录或 kit 目录本身
+if defined WINDEPLOYQT goto :eof
+call :try_windeployqt_bin "%~1\bin"
+if defined WINDEPLOYQT goto :eof
+rem 本项目使用的 kit 优先
+call :try_windeployqt_bin "%~1\5.14.2\msvc2017_64\bin"
+if defined WINDEPLOYQT goto :eof
+for /f "delims=" %%V in ('dir /b /o-n /ad "%~1" 2^>nul') do call :scan_wd_version "%~1\%%V"
+goto :eof
+
+:scan_wd_version
+rem %~1 = <Qt 根目录>\<版本>，kit 在其下一层
+if defined WINDEPLOYQT goto :eof
+call :try_windeployqt_bin "%~1\bin"
+if defined WINDEPLOYQT goto :eof
+for %%K in (msvc2017_64 msvc2019_64 msvc2022_64 msvc2015_64) do if not defined WINDEPLOYQT call :try_windeployqt_bin "%~1\%%K\bin"
+if defined WINDEPLOYQT goto :eof
+for /d %%K in ("%~1\msvc*_64") do call :try_windeployqt_bin "%%~fK\bin"
+goto :eof
+
+:try_windeployqt_bin
+rem 仅当目录中存在 windeployqt.exe 且属于 Qt 5 时采用，避免误用 Qt 6 的部署工具
+if defined WINDEPLOYQT goto :eof
+if not exist "%~1\windeployqt.exe" goto :eof
+if not exist "%~1\..\lib\cmake\Qt5Core" goto :eof
+set "WINDEPLOYQT=%~1\windeployqt.exe"
+goto :eof
