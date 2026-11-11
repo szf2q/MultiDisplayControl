@@ -13,6 +13,7 @@ class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
 class QPushButton;
+class QRadioButton;
 
 /**
  * @brief 软件清单编辑对话框
@@ -58,17 +59,17 @@ class SoftwareEditDialog : public QDialog
 
   private slots:
     /**
-     * @brief 类型下拉框变化时切换“浏览”按钮状态与路径提示
+     * @brief 类型单选按钮切换时更新“浏览”按钮状态与路径提示
      */
     void onTypeChanged();
 
     /**
-     * @brief 浏览本地文件，选择后自动抓取预览图与窗口标题
+     * @brief 浏览本地文件，选择后自动抓取预览图、窗口名称与窗口标题
      */
     void onBrowse();
 
     /**
-     * @brief 启动软件一次，抓取预览图并自动填充窗口标题
+     * @brief 启动软件一次，抓取预览图并自动填充窗口名称与窗口标题
      */
     void onCapture();
 
@@ -83,6 +84,12 @@ class SoftwareEditDialog : public QDialog
      */
     void loadPreviewImage();
 
+    /**
+     * @brief 取当前选中的应用类型
+     * @return desktop / web / ppt；均未选中时按 desktop 处理
+     */
+    QString currentType() const;
+
   private:
     /** 待编辑条目（保存 id 等调用方字段） */
     SoftwareItem m_item;
@@ -94,8 +101,20 @@ class SoftwareEditDialog : public QDialog
     bool m_previewAttempted = false;
     /** 本次是否成功生成预览图 */
     bool m_previewGenerated = false;
+    /**
+     * @brief 名称是否由用户手工填写或来自已有配置
+     *
+     * 为 false 时（新增且名称为空）抓取到窗口名称后自动回填名称；
+     * 用户一旦手工修改名称或编辑已有条目，就不再被自动抓取结果覆盖。
+     */
+    bool m_nameEdited = false;
 
-    QComboBox *typeCombo = nullptr;
+    /** 应用类型：桌面应用 */
+    QRadioButton *desktopRadio = nullptr;
+    /** 应用类型：网页 */
+    QRadioButton *webRadio = nullptr;
+    /** 应用类型：演示文稿 */
+    QRadioButton *pptRadio = nullptr;
     QLineEdit *nameEdit = nullptr;
     QLineEdit *pathEdit = nullptr;
     QLineEdit *windowTitleEdit = nullptr;

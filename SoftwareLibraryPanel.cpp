@@ -19,6 +19,7 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QStringList>
 #include <QStyle>
 #include <QStyledItemDelegate>
@@ -212,10 +213,17 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     setWindowTitle(item.id.isEmpty() ? QString::fromUtf8("新增软件") : QString::fromUtf8("编辑软件"));
     setMinimumWidth(760);
 
-    typeCombo = new QComboBox(this);
-    typeCombo->addItem(QString::fromUtf8("桌面应用"), QStringLiteral("desktop"));
-    typeCombo->addItem(QString::fromUtf8("网页"), QStringLiteral("web"));
-    typeCombo->addItem(QString::fromUtf8("演示文稿"), QStringLiteral("ppt"));
+    desktopRadio = new QRadioButton(QString::fromUtf8("桌面应用"), this);
+    webRadio = new QRadioButton(QString::fromUtf8("网页"), this);
+    pptRadio = new QRadioButton(QString::fromUtf8("演示文稿"), this);
+    QHBoxLayout *typeLayout = new QHBoxLayout();
+    typeLayout->setContentsMargins(0, 0, 0, 0);
+    typeLayout->addWidget(desktopRadio);
+    typeLayout->addWidget(webRadio);
+    typeLayout->addWidget(pptRadio);
+    typeLayout->addStretch(1);
+    QWidget *typeRow = new QWidget(this);
+    typeRow->setLayout(typeLayout);
 
     nameEdit = new QLineEdit(this);
     nameEdit->setPlaceholderText(QString::fromUtf8("例如：OA办公系统"));
@@ -237,7 +245,7 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     remarkEdit->setPlaceholderText(QString::fromUtf8("可选，仅用于备注说明"));
 
     QFormLayout *form = new QFormLayout();
-    form->addRow(QString::fromUtf8("类型"), typeCombo);
+    form->addRow(QString::fromUtf8("类型"), typeRow);
     form->addRow(QString::fromUtf8("名称"), nameEdit);
     form->addRow(QString::fromUtf8("路径/地址"), pathRow);
     form->addRow(QString::fromUtf8("窗口标题"), windowTitleEdit);
@@ -253,7 +261,7 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     captureButton = new QPushButton(QString::fromUtf8("获取预览与窗口标题"), this);
     QLabel *previewHint = new QLabel(
         QString::fromUtf8("演示文稿会导出第一页作为预览；桌面应用会启动一次并抓取第一个界面；网页会加载地址后截取"
-                          "页面首屏。窗口标题自动识别后仍可手工修改。"), this);
+                          "页面首屏。窗口名称与窗口标题自动识别后仍可手工修改。"), this);
     previewHint->setObjectName(QStringLiteral("hintLabel"));
     previewHint->setWordWrap(true);
 
@@ -281,17 +289,43 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
     mainLayout->addSpacing(6);
     mainLayout->addLayout(buttons);
 
-    // 回填已有数据
-    const int typeIndex = typeCombo->findData(item.type.isEmpty() ? QStringLiteral("desktop") : item.type);
-    typeCombo->setCurrentIndex(typeIndex >= 0 ? typeIndex : 0);
+    // 回填已有数据：类型按单选项还原，未知类型回退到桌面应用
+    const QString itemType = item.type.isEmpty() ? QStringLiteral("desktop") : item.type;
+    desktopRadio->setChecked(itemType == QStringLiteral("desktop"));
+    webRadio->setChecked(itemType == QStringLiteral("web"));
+    pptRadio->setChecked(itemType == QStringLiteral("ppt"));
+    if (!desktopRadio->isChecked() && !webRadio->isChecked() && !pptRadio->isChecked())
+    {
+        desktopRadio->setChecked(true);
+    }
     nameEdit->setText(item.name);
     pathEdit->setText(item.path);
     windowTitleEdit->setText(item.windowTitle);
     startupArgsEdit->setText(item.startupArgs);
     remarkEdit->setText(item.remark);
 
-    connect(typeCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
-            [this](int) { onTypeChanged(); });
+    // 已有配置的名称视为用户设定，抓取窗口名称时不再覆盖；新增且名称为空时才允许自动回填
+    m_nameEdited = !item.name.isEmpty();
+    // 用户手工输入名称后同样不再被抓取结果覆盖（setText 不触发 textEdited，自动回填不会误判）
+    connect(nameEdit, &QLineEdit::textEdited, this, [this](const QString &) { m_nameEdited = true; });
+    connect(desktopRadio, &QRadioButton::toggled, this, [this](bool checked) {
+        if (checked)
+        {
+            onTypeChanged();
+        }
+    });
+    connect(webRadio, &QRadioButton::toggled, this, [this](bool checked) {
+        if (checked)
+        {
+            onTypeChanged();
+        }
+    });
+    connect(pptRadio, &QRadioButton::toggled, this, [this](bool checked) {
+        if (checked)
+        {
+            onTypeChanged();
+        }
+    });
     connect(browseButton, &QPushButton::clicked, this, [this]() { onBrowse(); });
     connect(captureButton, &QPushButton::clicked, this, [this]() { onCapture(); });
     connect(cancelButton, &QPushButton::clicked, this, [this]() { reject(); });
@@ -320,9 +354,22 @@ void SoftwareEditDialog::reject()
     QDialog::reject();
 }
 
+QString SoftwareEditDialog::currentType() const
+{
+    if (webRadio->isChecked())
+    {
+        return QStringLiteral("web");
+    }
+    if (pptRadio->isChecked())
+    {
+        return QStringLiteral("ppt");
+    }
+    return QStringLiteral("desktop");
+}
+
 void SoftwareEditDialog::onTypeChanged()
 {
-    const QString type = typeCombo->currentData().toString();
+    const QString type = currentType();
     const bool isWeb = (type == "web");
     browseButton->setEnabled(!isWeb);
     windowTitleEdit->setEnabled(!isWeb);
@@ -343,7 +390,7 @@ void SoftwareEditDialog::onTypeChanged()
 
 void SoftwareEditDialog::onBrowse()
 {
-    const QString type = typeCombo->currentData().toString();
+    const QString type = currentType();
     QString filter = QString::fromUtf8("所有文件 (*.*)");
     if (type == "desktop")
     {
@@ -361,15 +408,16 @@ void SoftwareEditDialog::onBrowse()
     pathEdit->setText(filePath);
     if (nameEdit->text().isEmpty())
     {
+        // 先用文件名兜底，抓取成功后会被真实窗口名称覆盖
         nameEdit->setText(QFileInfo(filePath).completeBaseName());
     }
-    // 选好路径后立即运行一次程序，自动获取窗口标题并生成预览图
+    // 选好路径后立即运行一次程序，自动获取窗口名称、窗口标题并生成预览图
     onCapture();
 }
 
 void SoftwareEditDialog::onCapture()
 {
-    const QString type = typeCombo->currentData().toString();
+    const QString type = currentType();
     SoftwareItem probe;
     probe.id = m_item.id;
     probe.type = type;
@@ -414,6 +462,11 @@ void SoftwareEditDialog::onCapture()
     {
         // 自动填充窗口标题（演示文稿用文档名），填充后仍可在输入框中手工修改
         windowTitleEdit->setText(detectedTitle);
+        // 名称默认取抓取到的窗口名称；用户手工改过名称或编辑已有条目时保持原值
+        if (!m_nameEdited)
+        {
+            nameEdit->setText(detectedTitle);
+        }
     }
     loadPreviewImage();
 }
@@ -439,7 +492,7 @@ void SoftwareEditDialog::loadPreviewImage()
 
 void SoftwareEditDialog::onAccept()
 {
-    const QString type = typeCombo->currentData().toString();
+    const QString type = currentType();
     const QString name = nameEdit->text().trimmed();
     const QString path = pathEdit->text().trimmed();
     const QString windowTitle = windowTitleEdit->text().trimmed();
