@@ -2,17 +2,20 @@
 
 #include <windows.h>
 #include <tlhelp32.h>
+#include <QColor>
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QMap>
 #include <QMessageBox>
 #include <QNetworkProxyFactory>
+#include <QPalette>
 #include <QProcess>
 #include <QSharedMemory>
 #include <QSharedPointer>
 #include <QTimer>
 #include <QVector>
+#include <QWidget>
 #include <QCefConfig.h>
 #include <QCefContext.h>
 #include <QCursor>
@@ -67,6 +70,68 @@ namespace
         }
         CloseHandle(snapshot);
         return found;
+    }
+
+    /**
+     * @brief 创建铺满指定物理屏的纯色空白占位窗体
+     *
+     * 用于“配置中没有任何软件”时遮挡系统桌面。窗体无边框且不接受焦点，
+     * 因此不会抢走配置管理界面的焦点与键盘输入，只作为背景底色存在。
+     *
+     * @param screen 目标物理屏，不能为空
+     * @return 已显示的占位窗体，调用方负责在不再需要时释放
+     */
+    QWidget *createBlankPlaceholderWindow(QScreen *screen)
+    {
+        QWidget *window = new QWidget();
+        // Qt::Tool 让占位窗体不进入任务栏；WindowDoesNotAcceptFocus 保证鼠标点击不会聚焦到它
+        window->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
+        // 显示时不激活：管理界面在其后打开时不会被压到占位窗体下面
+        window->setAttribute(Qt::WA_ShowWithoutActivating);
+        window->setAutoFillBackground(true);
+        QPalette palette = window->palette();
+        // 与 ExternalAppWindow、CefWebView 的占位底色一致，避免大屏闪出刺眼的纯白或纯黑
+        palette.setColor(QPalette::Window, QColor(QStringLiteral("#010A1B")));
+        window->setPalette(palette);
+        // 先定位到目标屏再全屏：多屏环境下 showFullScreen 以窗体当前所在屏为准
+        const QRect screenGeometry = screen->geometry();
+        window->setGeometry(screenGeometry);
+        window->showFullScreen();
+        return window;
+    }
+
+    /**
+     * @brief 按配置同步纯色空白占位窗体
+     *
+     * 配置中没有任何已分配软件时，为每块物理屏铺一个纯色空白窗体，避免配置管理界面
+     * 背后露出系统桌面；一旦有软件被分配，立即关闭并释放全部占位窗体。
+     *
+     * @param placeholders   占位窗体容器，由调用方持有，函数内部按需创建与释放
+     * @param hasAssignedApp 配置中是否至少有一个已分配软件
+     */
+    void syncBlankPlaceholders(QList<QWidget *> *placeholders, bool hasAssignedApp)
+    {
+        if (hasAssignedApp)
+        {
+            if (!placeholders->isEmpty())
+            {
+                qDebug() << "close blank placeholders, count = " << placeholders->size();
+                qDeleteAll(*placeholders);
+                placeholders->clear();
+            }
+            return;
+        }
+        // 已创建过就不重复创建；物理屏数量变化由重启覆盖
+        if (!placeholders->isEmpty())
+        {
+            return;
+        }
+        const QList<QScreen *> screens = QGuiApplication::screens();
+        for (int i = 0; i < screens.size(); i++)
+        {
+            placeholders->append(createBlankPlaceholderWindow(screens[i]));
+        }
+        qDebug() << "create blank placeholders, count = " << placeholders->size();
     }
 }  // namespace
 void setAppStyle()
@@ -561,6 +626,10 @@ int main(int argc, char *argv[])
         restartAppWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         shortcutHelpWatcher(GlobalKeyWatcher::watcher, shortcutHelpDialog);
 
+        // 纯色空白占位窗体：配置中没有任何已分配软件时铺满每块物理屏，
+        // 避免自动打开的配置管理界面背后露出系统桌面
+        QList<QWidget *> blankPlaceholders;
+
         // 管理界面：Alt+M 显示/隐藏；保存后调用运行时做增量热更新，并把结果回传到状态栏
         ManagementWindow manager;
         manager.setConfig(config);
@@ -585,23 +654,33 @@ int main(int argc, char *argv[])
                              QApplication::exit(0);
                          });
         QObject::connect(&manager, &ManagementWindow::applyRequested, &manager,
-                         [&runtime, &manager](const MultiScreenConfig &newConfig) {
+                         [&runtime, &manager, &blankPlaceholders](const MultiScreenConfig &newConfig) {
                              QStringList warnings;
                              runtime.apply(newConfig, &warnings);
                              // Win 键屏蔽开关保存后立即生效，无需重启主程序
                              GlobalKeyWatcher::watcher.setWinKeyDisabled(newConfig.disableWinKey);
+                             // 保存后按新配置同步占位窗体：分配了软件就关闭，仍为空则保留
+                             bool hasAssignedApp = false;
+                             for (int i = 0; i < newConfig.screenList.size() && !hasAssignedApp; i++)
+                             {
+                                 hasAssignedApp = (newConfig.screenList[i].appCount > 0);
+                             }
+                             syncBlankPlaceholders(&blankPlaceholders, hasAssignedApp);
                              manager.notifyApplyResult(warnings);
                          });
         // 管理界面选中某块屏幕时，对应大屏四周显示红色边框，方便多屏定位
         QObject::connect(&manager, &ManagementWindow::screenHighlightChanged, &runtime,
                          [&runtime](int screenIndex) { runtime.highlightScreen(screenIndex); });
 
-        // 配置中没有任何已分配应用时，启动后自动打开配置管理界面，便于直接完成首次配置
+        // 配置中没有任何已分配应用时：
+        //   1. 每块物理屏铺一层纯色空白占位窗体，作为配置管理界面的背景，不露出系统桌面；
+        //   2. 启动后自动打开配置管理界面，便于直接完成首次配置。
         bool hasAssignedApp = false;
         for (int i = 0; i < config.screenList.size() && !hasAssignedApp; i++)
         {
             hasAssignedApp = (config.screenList[i].appCount > 0);
         }
+        syncBlankPlaceholders(&blankPlaceholders, hasAssignedApp);
         if (!hasAssignedApp)
         {
             qDebug() << "no software assigned, open management window";
