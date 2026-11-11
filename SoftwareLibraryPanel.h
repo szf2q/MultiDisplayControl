@@ -90,6 +90,16 @@ class SoftwareEditDialog : public QDialog
      */
     QString currentType() const;
 
+    /**
+     * @brief 取补全协议后的网页地址
+     *
+     * 地址本身带 http:// 或 https:// 时原样返回（以用户输入为准）；
+     * 未写协议时按协议下拉框补全，默认 https://。
+     *
+     * @return 完整网页地址；地址为空时返回空字符串
+     */
+    QString resolvedWebUrl() const;
+
   private:
     /** 待编辑条目（保存 id 等调用方字段） */
     SoftwareItem m_item;
@@ -116,6 +126,8 @@ class SoftwareEditDialog : public QDialog
     /** 应用类型：演示文稿 */
     QRadioButton *pptRadio = nullptr;
     QLineEdit *nameEdit = nullptr;
+    /** 网页地址协议选择，仅在网页类型下显示；数据项为 http / https */
+    QComboBox *schemeCombo = nullptr;
     QLineEdit *pathEdit = nullptr;
     QLineEdit *windowTitleEdit = nullptr;
     QLineEdit *startupArgsEdit = nullptr;
