@@ -205,6 +205,27 @@ namespace
         }
         return QString::fromUtf8("桌面应用");
     }
+
+    /**
+     * @brief 去掉网页地址的协议前缀
+     *
+     * 协议由界面上的下拉框承载，输入框只保留主机与路径部分，避免出现 https:// 重复显示。
+     *
+     * @param path 可能带 http:// 或 https:// 前缀的地址
+     * @return 去掉协议后的地址，不含原协议时原样返回
+     */
+    QString stripWebScheme(const QString &path)
+    {
+        if (path.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive))
+        {
+            return path.mid(8);
+        }
+        if (path.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive))
+        {
+            return path.mid(7);
+        }
+        return path;
+    }
 }  // namespace
 
 SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<SoftwareItem> &all, QWidget *parent)
@@ -306,7 +327,12 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
         desktopRadio->setChecked(true);
     }
     nameEdit->setText(item.name);
-    pathEdit->setText(item.path);
+    // 网页地址的协议放到下拉框，输入框只保留主机与路径部分，避免同一行里协议重复显示
+    pathEdit->setText(stripWebScheme(item.path));
+    if (item.path.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive))
+    {
+        schemeCombo->setCurrentIndex(schemeCombo->findData(QStringLiteral("http")));
+    }
     windowTitleEdit->setText(item.windowTitle);
     startupArgsEdit->setText(item.startupArgs);
     remarkEdit->setText(item.remark);
@@ -334,20 +360,21 @@ SoftwareEditDialog::SoftwareEditDialog(const SoftwareItem &item, const QList<Sof
         }
     });
     connect(browseButton, &QPushButton::clicked, this, [this]() { onBrowse(); });
-    connect(schemeCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
-            [this](int) {
-                // 地址里已带协议时跟随下拉框替换前缀，避免拼成 https://http:// 这类无效地址
-                const QString text = pathEdit->text().trimmed();
-                const QString scheme = schemeCombo->currentData().toString();
-                if (text.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive))
-                {
-                    pathEdit->setText(scheme + QStringLiteral("://") + text.mid(7));
-                }
-                else if (text.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive))
-                {
-                    pathEdit->setText(scheme + QStringLiteral("://") + text.mid(8));
-                }
-            });
+    // 粘贴完整地址时把协议摘到下拉框，保证输入框里只有主机与路径
+    connect(pathEdit, &QLineEdit::textEdited, this, [this](const QString &text) {
+        const QString trimmed = text.trimmed();
+        // 仅在协议后面还有内容时才摘，避免刚敲完 "http://" 就被清空
+        if (trimmed.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive) && trimmed.size() > 8)
+        {
+            schemeCombo->setCurrentIndex(schemeCombo->findData(QStringLiteral("https")));
+            pathEdit->setText(stripWebScheme(trimmed));
+        }
+        else if (trimmed.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive) && trimmed.size() > 7)
+        {
+            schemeCombo->setCurrentIndex(schemeCombo->findData(QStringLiteral("http")));
+            pathEdit->setText(stripWebScheme(trimmed));
+        }
+    });
     connect(captureButton, &QPushButton::clicked, this, [this]() { onCapture(); });
     connect(cancelButton, &QPushButton::clicked, this, [this]() { reject(); });
     connect(okButton, &QPushButton::clicked, this, [this]() { onAccept(); });
@@ -390,16 +417,11 @@ QString SoftwareEditDialog::currentType() const
 
 QString SoftwareEditDialog::resolvedWebUrl() const
 {
-    const QString text = pathEdit->text().trimmed();
+    // 输入框只放主机与路径，协议固定由下拉框提供；这里统一拼接成完整地址
+    const QString text = stripWebScheme(pathEdit->text().trimmed());
     if (text.isEmpty())
     {
         return QString();
-    }
-    // 用户自己写了协议就以输入为准，避免覆盖 http 站点
-    if (text.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive) ||
-        text.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive))
-    {
-        return text;
     }
     return schemeCombo->currentData().toString() + QStringLiteral("://") + text;
 }
@@ -413,17 +435,7 @@ void SoftwareEditDialog::onTypeChanged()
     schemeCombo->setVisible(isWeb);
     if (isWeb)
     {
-        // 回填已有地址时把协议同步到下拉框，保证界面选择与保存的地址一致
-        const QString text = pathEdit->text().trimmed();
-        if (text.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive))
-        {
-            schemeCombo->setCurrentIndex(schemeCombo->findData(QStringLiteral("http")));
-        }
-        else if (text.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive))
-        {
-            schemeCombo->setCurrentIndex(schemeCombo->findData(QStringLiteral("https")));
-        }
-        pathEdit->setPlaceholderText(QString::fromUtf8("example.com（不写协议时按左侧协议补全）"));
+        pathEdit->setPlaceholderText(QString::fromUtf8("www.example.com，协议按左侧选择"));
         windowTitleEdit->clear();
     }
     else if (type == "ppt")
@@ -601,11 +613,6 @@ void SoftwareEditDialog::onAccept()
     m_item.type = type;
     m_item.name = name;
     m_item.path = path;
-    // 把补全协议后的地址回写到输入框，用户能直接看到最终保存的完整地址
-    if (type == "web")
-    {
-        pathEdit->setText(path);
-    }
     m_item.windowTitle = windowTitle;
     m_item.startupArgs = startupArgsEdit->text().trimmed();
     m_item.remark = remarkEdit->text().trimmed();
