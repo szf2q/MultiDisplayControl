@@ -299,6 +299,58 @@ void reloadScreenWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWin
 }
 
 /**
+ * @brief 显示全部屏幕窗口上的序号浮层
+ *
+ * 按住 Alt+S 期间调用：忽略配置项 show_index，强制显示各屏序号，
+ * 便于现场快速确认哪块物理屏对应几号屏。
+ *
+ * @param winList 屏幕序号到窗口对象的映射
+ */
+void showScreenNumbers(QMap<QString, ExternalAppWindow *> &winList)
+{
+    for (QMap<QString, ExternalAppWindow *>::iterator it = winList.begin(); it != winList.end(); ++it)
+    {
+        ExternalAppWindow *win = it.value();
+        // 隐藏的窗口没有可见宿主，跳过以免无效控件被拉起
+        if (win == nullptr || win->isHidden())
+        {
+            continue;
+        }
+        win->showScreenIndexTemporarily();
+    }
+}
+
+/**
+ * @brief 隐藏序号浮层，恢复为配置项 show_index 决定的状态
+ * @param winList 屏幕序号到窗口对象的映射
+ */
+void hideScreenNumbers(QMap<QString, ExternalAppWindow *> &winList)
+{
+    for (QMap<QString, ExternalAppWindow *>::iterator it = winList.begin(); it != winList.end(); ++it)
+    {
+        ExternalAppWindow *win = it.value();
+        if (win == nullptr)
+        {
+            continue;
+        }
+        win->hideScreenIndexTemporarily();
+    }
+}
+
+/**
+ * @brief 注册 Alt+S 快捷键的响应：按住显示屏幕序号，松开隐藏
+ * @param watcher 全局热键监听器
+ * @param winList 屏幕序号到窗口对象的映射
+ */
+void screenNumberWatcher(GlobalKeyWatcher &watcher, QMap<QString, ExternalAppWindow *> &winList)
+{
+    QObject::connect(&watcher, &GlobalKeyWatcher::screenNumberShowRequested,
+                     [&winList]() { showScreenNumbers(winList); });
+    QObject::connect(&watcher, &GlobalKeyWatcher::screenNumberHideRequested,
+                     [&winList]() { hideScreenNumbers(winList); });
+}
+
+/**
  * @brief 重新加载鼠标所在屏幕中当前选中标签页的应用
  * @param winList 屏幕序号到窗口对象的映射
  *
@@ -619,6 +671,7 @@ int main(int argc, char *argv[])
         closeUndesiredWindowTimer(timer);
         screenSwitchWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         reloadScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
+        screenNumberWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         reloadCurrentScreenWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         switchTabWatcher(GlobalKeyWatcher::watcher, GlobalVariants::winList);
         // 注意：closeAppsWatcher 不在此调用，Alt+Q/Alt+F4 的逻辑统一在下方

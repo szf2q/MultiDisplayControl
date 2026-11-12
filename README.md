@@ -141,6 +141,7 @@ MultiDisplayControl/
 - `quitKeyPressed(QString keyMessage)` — `Alt + Q` / `Alt + F4`
 - `helpKeyPressed()` — `Alt + H`，弹出/关闭快捷键说明浮层（置顶、无边框，点击浮层外部或按 Esc 关闭）
 - `manageKeyPressed()` — `Alt + M`，打开/隐藏屏立方管理界面
+- `screenNumberShowRequested()` / `screenNumberHideRequested()` — `Alt + S` 按住显示、松开隐藏各屏序号；`RegisterHotKey` 只能收到按下，因此这一组由低级键盘钩子同时处理按下与抬起
 
 全局配置 `global.disableWinKey` 开启时，同一低级键盘钩子会吞掉左右 Win 键的按下与抬起事件，系统收不到 Win 键状态，因此 `Win`、`Win+D`、`Win+R` 等组合键均失效，可避免全屏展示时误触系统界面；该开关在管理界面「禁用 Win 键」中切换，保存后立即生效，无需重启主程序。
 
@@ -224,6 +225,7 @@ app_1_startup_args=
 | `Alt+M`                                          | 打开/隐藏屏立方管理界面（软件清单、屏幕布局、拖拽分配、保存热应用）                    |
 | `Alt+F12`                                        | 自动重启屏立方（结束各屏应用后重新启动自身，用于让需重启的配置立即生效）               |
 | `Alt+H`                                          | 显示/关闭快捷键说明浮层                                                                |
+| `Alt+S`                                          | 按住时在各屏幕显示屏幕序号（不受 `show_index` 开关限制），松开后恢复原状态             |
 | `Alt+Q` / `Alt+F4`                               | 关闭所有窗口并退出程序                                                                 |
 
 `Alt+Tab` / `Alt+Shift+Tab` 用于循环切换鼠标所在屏幕的标签页；只有该屏存在两个及以上标签时才由程序接管，否则放行给 Windows 自带的窗口切换。

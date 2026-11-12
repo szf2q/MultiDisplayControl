@@ -146,6 +146,19 @@ class ExternalAppWindow : public QMainWindow
      */
     void setHighlighted(bool highlighted);
 
+    /**
+     * @brief 临时显示屏幕序号浮层
+     *
+     * 供“按住快捷键显示屏幕序号”使用：无论配置项 show_index 是否开启都显示序号，
+     * 并刷新序号文字。松开快捷键后由 hideScreenIndexTemporarily() 恢复原状态。
+     */
+    void showScreenIndexTemporarily();
+
+    /**
+     * @brief 结束临时显示，按配置项 show_index 恢复序号浮层的可见性
+     */
+    void hideScreenIndexTemporarily();
+
   protected:
     /**
      * @brief 自绘事件（保留默认实现，红色边框改由独立覆盖窗口绘制）

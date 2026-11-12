@@ -171,6 +171,8 @@ void ShortcutHelpDialog::buildUi()
                    textUtf8("切换鼠标所在屏幕的标签页：向后 / 向前循环切换"));
     addShortcutRow(grid, 7, QStringLiteral("Alt + F12"),
                    textUtf8("自动重启屏立方（结束各屏应用后重新启动自身）"));
+    addShortcutRow(grid, 8, QStringLiteral("Alt + S"),
+                   textUtf8("按住时在各屏幕显示屏幕序号，松开后隐藏"));
 
     cardLayout->addLayout(grid);
     cardLayout->addStretch();

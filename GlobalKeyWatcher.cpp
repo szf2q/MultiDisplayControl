@@ -21,6 +21,14 @@ std::atomic<bool> winKeyBlocked(false);
  */
 std::atomic<bool> altTabAvailable(false);
 
+/**
+ * @brief 屏幕序号是否处于“按住 Alt+S 临时显示”状态
+ *
+ * 按键自动重复会持续产生按下事件，用它保证一次按住只通知界面显示一次，
+ * 并在抬起时判断是否需要通知隐藏。钩子回调与主线程都会读写，故使用原子量。
+ */
+std::atomic<bool> screenNumberShown(false);
+
 #ifdef Q_OS_WIN
 /** @brief 低级键盘钩子句柄，全局唯一，随进程存活 */
 HHOOK keyboardHook = nullptr;
@@ -88,6 +96,30 @@ LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
                                           Q_ARG(bool, reverse));
                 return 1;
             }
+            // Alt+S：按住显示屏幕序号，松开隐藏。RegisterHotKey 只能收到按下，
+            // 因此这里用钩子同时处理按下与抬起，才能实现“松手即隐藏”。
+            if (keyInfo->vkCode == 'S')
+            {
+                const bool keyDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+                const bool keyUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
+                if (keyDown && (GetAsyncKeyState(VK_MENU) & 0x8000) != 0)
+                {
+                    // 只在首次按下时通知，按住期间的自动重复事件直接吞掉
+                    if (!screenNumberShown.exchange(true))
+                    {
+                        QMetaObject::invokeMethod(&GlobalKeyWatcher::watcher, "handleScreenNumberShow",
+                                                  Qt::QueuedConnection);
+                    }
+                    return 1;
+                }
+                // 抬起时不要求 Alt 仍按下：先松 Alt 再松 S 也能正常隐藏
+                if (keyUp && screenNumberShown.exchange(false))
+                {
+                    QMetaObject::invokeMethod(&GlobalKeyWatcher::watcher, "handleScreenNumberHide",
+                                              Qt::QueuedConnection);
+                    return 1;
+                }
+            }
         }
     }
     return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
@@ -127,6 +159,18 @@ void GlobalKeyWatcher::handleAltTab(bool reverse)
 {
     qDebug() << "组合键Alt+Tab触发, reverse = " << reverse;
     emit altTabPressed(reverse);
+}
+
+void GlobalKeyWatcher::handleScreenNumberShow()
+{
+    qDebug() << "组合键Alt+S按下，显示屏幕序号";
+    emit screenNumberShowRequested();
+}
+
+void GlobalKeyWatcher::handleScreenNumberHide()
+{
+    qDebug() << "组合键Alt+S抬起，隐藏屏幕序号";
+    emit screenNumberHideRequested();
 }
 
 void GlobalKeyWatcher::setWinKeyDisabled(bool disabled)

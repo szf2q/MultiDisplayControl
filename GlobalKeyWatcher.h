@@ -32,6 +32,19 @@ class GlobalKeyWatcher : public QObject, public QAbstractNativeEventFilter
     Q_INVOKABLE void handleAltTab(bool reverse);
 
     /**
+     * @brief 处理低级键盘钩子转发过来的 Alt+S 按下事件
+     *
+     * 与 Alt+Tab 相同，钩子回调不能直接操作界面，通过队列调用转到主线程后
+     * 再发出 screenNumberShowRequested 信号。
+     */
+    Q_INVOKABLE void handleScreenNumberShow();
+
+    /**
+     * @brief 处理低级键盘钩子转发过来的 Alt+S 抬起事件，通知隐藏屏幕序号
+     */
+    Q_INVOKABLE void handleScreenNumberHide();
+
+    /**
      * @brief 设置是否禁用 Windows 徽标键（Win 键）
      *
      * 由配置项 global.disableWinKey 驱动：开启后低级键盘钩子会吞掉 Win 键的
@@ -78,6 +91,10 @@ class GlobalKeyWatcher : public QObject, public QAbstractNativeEventFilter
      * @param reverse true 表示 Alt+Shift+Tab（向前切换）
      */
     void altTabPressed(bool reverse);
+    /** @brief Alt+S 被按下，用于在各屏幕显示屏幕序号 */
+    void screenNumberShowRequested();
+    /** @brief Alt+S 被松开（或临时显示状态结束），用于隐藏屏幕序号 */
+    void screenNumberHideRequested();
 
   private:
     /** @brief 当前具备 Alt+Tab 切换目标的屏幕窗口集合（仅主线程访问） */

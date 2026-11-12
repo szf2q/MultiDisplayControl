@@ -294,6 +294,29 @@ void ExternalAppWindow::displayScreenIndex()
         screenIndexLbl->setText(QString("%1").arg(this->config.screenIndex));
     }
 }
+
+void ExternalAppWindow::showScreenIndexTemporarily()
+{
+    if (screenIndexWidget == nullptr)
+    {
+        return;
+    }
+    // 配置里关掉序号时浮层是隐藏的，这里强制显示；文字始终同步，无需额外刷新
+    displayScreenIndex();
+    screenIndexWidget->setVisible(true);
+    // 嵌入的外部程序是原生窗口，浮层需要抬到最前才能盖住它
+    screenIndexWidget->raise();
+}
+
+void ExternalAppWindow::hideScreenIndexTemporarily()
+{
+    if (screenIndexWidget == nullptr)
+    {
+        return;
+    }
+    // 恢复为配置决定的状态：配置开启序号时保持显示，关闭时隐藏
+    screenIndexWidget->setVisible(this->config.showIndex);
+}
 void ExternalAppWindow::setScreen(int screenIndex)
 {
     if (screenIndex <= 0)
