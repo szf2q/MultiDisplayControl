@@ -37,7 +37,13 @@ set "OUTPUT_EXE=release\MultiDisplayControl.exe"
 REM Folder holding obj/moc/qrc files to delete before build, empty = skip
 set "OBJ_TMP_DIR=release\tmp"
 REM Skip qmake when the Makefile already exists: yes / no
-set "SKIP_QMAKE_IF_MAKEFILE=yes"
+REM Keep this at "no": an old Makefile points at the Qt/MSVC paths that were
+REM detected last time, so reusing it after Qt moved produces errors such as
+REM "U1073: don't know how to make ...\Qt5AxContainer.lib".
+set "SKIP_QMAKE_IF_MAKEFILE=no"
+REM Reject Qt kits built for another toolchain (e.g. mingw73_64) because this
+REM script always builds with MSVC: yes / no
+set "QT_REQUIRE_MSVC=yes"
 REM Add ATL/MFC include and lib paths (required by ActiveQt): yes / no
 set "NEED_ATLMFC=yes"
 
@@ -213,7 +219,15 @@ if defined QT_DIR goto qt_ok
 echo [ERROR] Qt not found!
 echo         Tried QTDIR/QT_HOME/QT_ROOT, qmake on PATH, a scan of all
 echo         drives and QT_FALLBACKS.
+if not defined QT_KIT_MISMATCH goto qt_fail_hint
+echo.
+echo [ERROR] Only non-MSVC Qt kits were found (see the skipped kits above).
+echo         Install a msvc2017_64 / msvc2019_64 kit, or point QT_FALLBACKS
+echo         at one, or set QT_REQUIRE_MSVC=no to allow mingw kits.
+goto qt_fail_exit
+:qt_fail_hint
 echo         Install the proper Qt kit or add it to QT_FALLBACKS.
+:qt_fail_exit
 pause
 exit /b 1
 :qt_ok
@@ -361,13 +375,42 @@ set "SDK_VERSION=%~1"
 goto :eof
 
 :try_qt
-REM Accept a candidate Qt kit only if it contains bin\qmake.exe.
+REM Accept a candidate Qt kit only if it contains bin\qmake.exe and, when
+REM QT_REQUIRE_MSVC is yes, was built for MSVC rather than mingw.
 REM A trailing backslash is stripped so "dir\bin" never becomes "dir\\bin".
 if defined QT_DIR goto :eof
 set "CANDIDATE=%~1"
 if "%CANDIDATE:~-1%"=="\" set "CANDIDATE=%CANDIDATE:~0,-1%"
 if not exist "%CANDIDATE%\bin\qmake.exe" goto :eof
+if /i not "%QT_REQUIRE_MSVC%"=="yes" goto try_qt_accept
+call :is_msvc_qt "%CANDIDATE%"
+if defined QT_KIT_OK goto try_qt_accept
+REM Say why this kit was rejected; printing here avoids quoting issues when
+REM paths contain spaces (a collected list would be split by the for loop).
+echo [INFO] Skip Qt kit, not an MSVC build: %CANDIDATE%
+set "QT_KIT_MISMATCH=1"
+goto :eof
+
+:try_qt_accept
 set "QT_DIR=%CANDIDATE%"
+goto :eof
+
+:is_msvc_qt
+REM %~1 = a kit folder; set QT_KIT_OK only for a win32-msvc qmake build.
+REM qmake -query QMAKE_XSPEC reports win32-msvc* for MSVC kits and win32-g++
+REM for mingw kits; fall back to the folder name when the query is empty.
+set "QT_KIT_OK="
+set "QSPEC="
+for /f "usebackq delims=" %%s in (`"%~1\bin\qmake.exe" -query QMAKE_XSPEC 2^>nul`) do set "QSPEC=%%s"
+if defined QSPEC goto is_msvc_qt_check
+echo %~1 | findstr /i "mingw" >nul
+if errorlevel 1 set "QT_KIT_OK=1"
+goto :eof
+
+:is_msvc_qt_check
+echo %QSPEC% | findstr /i "msvc" >nul
+if errorlevel 1 goto :eof
+set "QT_KIT_OK=1"
 goto :eof
 
 :try_qt_env
