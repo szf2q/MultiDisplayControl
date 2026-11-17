@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
+        <file>icons/app.png</file>
         <file>qss/dark/add_bottom.png</file>
         <file>qss/dark/add_left.png</file>
         <file>qss/dark/add_right.png</file>

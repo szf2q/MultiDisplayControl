@@ -5,6 +5,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
+#include <QIcon>
 #include <QMap>
 #include <QMessageBox>
 #include <QNetworkProxyFactory>
@@ -430,6 +431,8 @@ int main(int argc, char *argv[])
     try
     {
         QApplication a(argc, argv);
+        // 窗口/任务栏图标取自资源内的 PNG；exe 文件图标由 .pro 的 RC_ICONS 编译进资源
+        a.setWindowIcon(QIcon(QStringLiteral(":/icons/app.png")));
         QNetworkProxyFactory::setUseSystemConfiguration(false);
 
         setAppStyle();

@@ -58,6 +58,12 @@ win32{
 
 TARGET = MultiDisplayControl
 
+# 可执行文件图标（Windows 资源）：由 qmake 生成 .rc 并编译进 exe，
+# 供资源管理器、任务栏与快捷方式显示；Linux 下忽略，由窗口图标承担
+win32 {
+    RC_ICONS = $$PWD/icons/app.ico
+}
+
 
 # The following define makes your compiler emit warnings if you use
 # any Qt feature that has been marked deprecated (the exact warnings
