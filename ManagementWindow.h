@@ -10,6 +10,7 @@
 
 class QCheckBox;
 class QFrame;
+class QHideEvent;
 class QLabel;
 class QListWidget;
 class QListWidgetItem;
@@ -107,6 +108,16 @@ class ManagementWindow : public QWidget
      * @param event 显示事件
      */
     void showEvent(QShowEvent *event) override;
+
+    /**
+     * @brief 隐藏时清除大屏高亮
+     *
+     * 关闭按钮、Alt+M、Alt+Q 等路径都只调用 hide()，不会触发 closeEvent，
+     * 因此统一在 hideEvent 中取消高亮，避免管理界面隐藏后大屏残留红色边框。
+     *
+     * @param event 隐藏事件
+     */
+    void hideEvent(QHideEvent *event) override;
 
     /**
      * @brief 无边框窗口拖动：按下空白区域开始拖动
