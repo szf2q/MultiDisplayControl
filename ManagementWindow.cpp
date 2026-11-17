@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
@@ -641,9 +642,8 @@ void ManagementWindow::notifyApplyResult(const QStringList &warnings)
 
 void ManagementWindow::closeEvent(QCloseEvent *event)
 {
-    // 隐藏管理界面时清除所有大屏的红色高亮边框
-    emit screenHighlightChanged(0);
-    // 关闭仅隐藏，保持管理界面状态与运行时展示不受影响
+    // 关闭仅隐藏，保持管理界面状态与运行时展示不受影响；
+    // 大屏高亮在 hideEvent 中统一清除
     hide();
     event->ignore();
 }
@@ -660,6 +660,14 @@ void ManagementWindow::showEvent(QShowEvent *event)
             emit screenHighlightChanged(m_config.screenList[row].screenIndex);
         }
     }
+}
+
+void ManagementWindow::hideEvent(QHideEvent *event)
+{
+    // 关闭按钮、Alt+M、Alt+Q 都走 hide()，不触发 closeEvent，
+    // 统一在此清除所有大屏的红色高亮边框
+    emit screenHighlightChanged(0);
+    QWidget::hideEvent(event);
 }
 
 void ManagementWindow::mousePressEvent(QMouseEvent *event)
